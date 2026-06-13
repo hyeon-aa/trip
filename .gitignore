@@ -1,0 +1,12 @@
+# Server
+server/build/
+server/.gradle/
+server/src/main/resources/application.properties
+
+# Client
+client/.next/
+client/node_modules/
+
+# 환경변수
+.env
+.env.local
