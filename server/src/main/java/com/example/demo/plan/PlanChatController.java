@@ -1,7 +1,7 @@
 package com.example.demo.plan;
 
+import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -13,6 +13,8 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import com.example.demo.ai.AiService;
 import com.example.demo.jeju.JejuPlace;
 import com.example.demo.jeju.JejuPlaceRepository;
+import com.example.demo.plan.dto.ChatMessageDto;
+import com.example.demo.plan.dto.PlanChatRequest;
 import com.example.demo.wishlist.Wishlist;
 import com.example.demo.wishlist.WishlistRepository;
 
@@ -31,11 +33,11 @@ public class PlanChatController {
     }
 
     @PostMapping(value = "/chat", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public SseEmitter chat(@RequestBody Map<String, Object> body) {
+    public SseEmitter chat(@RequestBody PlanChatRequest request) {
         SseEmitter emitter = new SseEmitter();
 
-        String message = (String) body.get("message");
-        List<Map<String, String>> history = (List<Map<String, String>>) body.get("history");
+        String message = request.message();
+         List<ChatMessageDto> history = request.history();
 
         // 위시리스트 컨텍스트
         List<Wishlist> wishlist = wishlistRepository.findAll();
@@ -98,10 +100,25 @@ public class PlanChatController {
                 """, placesStr, wishlistStr);
 
         // 히스토리 구성
-        List<Map<String, String>> messages = new java.util.ArrayList<>();
-        messages.add(Map.of("role", "system", "content", systemPrompt));
-        if (history != null) messages.addAll(history);
-        messages.add(Map.of("role", "user", "content", message));
+        List<ChatMessageDto> messages = new ArrayList<>();
+
+        messages.add(
+            new ChatMessageDto(
+                "system",
+                systemPrompt
+            )
+        );
+        
+        if (history != null) {
+            messages.addAll(history);
+        }
+        
+        messages.add(
+            new ChatMessageDto(
+                "user",
+                message
+            )
+        );
 
         // 별도 스레드에서 AI 호출
         new Thread(() -> {

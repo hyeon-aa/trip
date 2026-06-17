@@ -7,6 +7,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 
+import com.example.demo.plan.dto.ChatMessageDto;
+
 @Service
 public class AiService {
 
@@ -14,7 +16,7 @@ public class AiService {
     private String groqApiKey;
 
 
-    public String chat(List<Map<String, String>> messages) {
+    public String chat(List<ChatMessageDto> messages) {
         RestClient restClient = RestClient.create();
 
         Map<String, Object> body = Map.of(
