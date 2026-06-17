@@ -95,7 +95,7 @@ public class PlanChatController {
                 10. JSON 이외의 텍스트는 절대 출력하지 마세요.
                 11. 모든 텍스트는 반드시 한국어로만 작성하세요. 
                 12. 영어, 일본어, 중국어 등 다른 언어는 절대 사용하지 마세요. 
-                """, wishlistStr,placesStr);
+                """, placesStr, wishlistStr);
 
         // 히스토리 구성
         List<Map<String, String>> messages = new java.util.ArrayList<>();
