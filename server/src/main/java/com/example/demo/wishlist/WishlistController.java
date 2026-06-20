@@ -11,6 +11,9 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.example.demo.wishlist.dto.CreateWishlistRequest;
+import com.example.demo.wishlist.dto.WishlistResponse;
+
 @RestController
 @RequestMapping("/wishlist")
 public class WishlistController {
@@ -22,17 +25,25 @@ public class WishlistController {
     }
 
     @PostMapping
-    public ResponseEntity<Wishlist> add(@RequestBody Wishlist wishlist) {
-        return ResponseEntity.ok(wishlistService.add(wishlist));
+    public ResponseEntity<WishlistResponse> add(
+        @RequestBody CreateWishlistRequest request
+    ) {
+        return ResponseEntity.ok(
+            wishlistService.add(request)
+        );
     }
 
     @GetMapping
-    public ResponseEntity<List<Wishlist>> getAll() {
-        return ResponseEntity.ok(wishlistService.getAll());
+    public ResponseEntity<List<WishlistResponse>> getAll() {
+        return ResponseEntity.ok(
+            wishlistService.getAll()
+        );
     }
 
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> delete(@PathVariable Long id) {
+    public ResponseEntity<Void> delete(
+        @PathVariable Long id
+    ) {
         wishlistService.delete(id);
         return ResponseEntity.noContent().build();
     }
