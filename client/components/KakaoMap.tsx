@@ -1,5 +1,6 @@
 "use client";
 
+import { Schedule } from "@/feature/plan/api";
 import {
   addToWishlist,
   deleteWishlist,
@@ -8,21 +9,21 @@ import {
 import { Place } from "@/types/place/place";
 import { Wishlist } from "@/types/wishlist/wishlist";
 import { useEffect, useState } from "react";
-import { Map, MapMarker } from "react-kakao-maps-sdk";
+import {
+  CustomOverlayMap,
+  Map,
+  MapMarker,
+  Polyline,
+} from "react-kakao-maps-sdk";
 import PlanChat from "./PlanChat";
-import SchedulePanel from "./SchedulePanel";
 import SearchBar from "./SearchBar";
 import WishlistPanel from "./WishlistPanel";
-
-interface Schedule {
-  days: { day: number; places: string[] }[];
-}
 
 export default function KakaoMap() {
   const [center, setCenter] = useState({ lat: 33.450701, lng: 126.570667 });
   const [wishlist, setWishlist] = useState<Wishlist[]>([]);
   const [selectedPlaces, setSelectedPlaces] = useState<Place[]>([]);
-  const [schedule, setSchedule] = useState<Schedule | null>(null);
+  const [scheduleData, setScheduleData] = useState<Schedule | null>(null);
 
   useEffect(() => {
     getWishlist().then((data) => setWishlist(data));
@@ -50,6 +51,16 @@ export default function KakaoMap() {
   const handleDelete = async (id: number) => {
     await deleteWishlist(id);
     await fetchWishlist();
+  };
+
+  const handleScheduleUpdate = (schedule: Schedule) => {
+    setScheduleData(schedule);
+
+    // 첫번째 장소로 지도 중심 이동
+    const firstPlace = schedule.days[0]?.places.find((p) => p.lat && p.lng);
+    if (firstPlace?.lat && firstPlace?.lng) {
+      setCenter({ lat: firstPlace.lat, lng: firstPlace.lng });
+    }
   };
 
   return (
@@ -98,18 +109,59 @@ export default function KakaoMap() {
             }}
           />
         ))}
+        {scheduleData?.days.flatMap((day) =>
+          day.places
+            .filter((p) => p.lat && p.lng)
+            .map((place, idx) => (
+              <CustomOverlayMap
+                key={`schedule-${day.day}-${idx}`}
+                position={{ lat: place.lat!, lng: place.lng! }}
+              >
+                <div
+                  style={{
+                    background: day.day === 1 ? "#38bdf8" : "#fb923c",
+                    color: "white",
+                    borderRadius: "50%",
+                    width: 28,
+                    height: 28,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: 12,
+                    fontWeight: 600,
+                    border: "2px solid white",
+                    boxShadow: "0 1px 3px rgba(0,0,0,0.3)",
+                  }}
+                >
+                  {idx + 1}
+                </div>
+              </CustomOverlayMap>
+            ))
+        )}
+
+        {scheduleData?.days.map((day) => {
+          const path = day.places
+            .filter((p) => p.lat && p.lng)
+            .map((p) => ({ lat: p.lat!, lng: p.lng! }));
+
+          return (
+            <Polyline
+              key={`route-${day.day}`}
+              path={path}
+              strokeWeight={3}
+              strokeColor={day.day === 1 ? "#38bdf8" : "#fb923c"}
+              strokeOpacity={0.7}
+              strokeStyle="solid"
+            />
+          );
+        })}
       </Map>
 
       {/* 오른쪽 - 채팅 + 일정 */}
       <div className="w-80 flex flex-col bg-white border-l border-sky-100 shadow-sm">
         <div className="flex-1 overflow-hidden flex flex-col min-h-0">
-          <PlanChat onScheduleUpdate={(s) => setSchedule(s as Schedule)} />
+          <PlanChat onScheduleUpdate={handleScheduleUpdate} />
         </div>
-        {schedule && (
-          <div className="border-t border-sky-100 overflow-y-auto max-h-64">
-            <SchedulePanel schedule={schedule} />
-          </div>
-        )}
       </div>
     </div>
   );

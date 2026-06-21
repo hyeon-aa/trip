@@ -1,21 +1,29 @@
 "use client";
 
-import { ChatMessage, sendPlanChat } from "@/feature/plan/api";
+import { ChatMessage, Schedule, sendPlanChat } from "@/feature/plan/api";
 import { useState } from "react";
+import SchedulePanel from "./SchedulePanel";
 
 interface Props {
-  onScheduleUpdate: (schedule: object) => void;
+  onScheduleUpdate: (schedule: Schedule) => void;
 }
 
 export default function PlanChat({ onScheduleUpdate }: Props) {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>([
+    {
+      role: "assistant",
+      content:
+        "안녕하세요! 제주도 여행을 계획해드릴게요 😊 어떤 스타일을 좋아하시는지, 누구와 함께 가시는지, 며칠 일정인지 알려주세요! 한 번에 말씀해주셔도 되고, 하나씩 알려주셔도 좋아요.",
+    },
+  ]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
-  const sendMessage = async () => {
-    if (!input.trim() || isLoading) return;
+  const sendMessage = async (overrideText?: string) => {
+    const text = overrideText ?? input;
+    if (!text.trim() || isLoading) return;
 
-    const userMessage = input.trim();
+    const userMessage = text.trim();
     setInput("");
     setIsLoading(true);
 
@@ -23,24 +31,43 @@ export default function PlanChat({ onScheduleUpdate }: Props) {
       ...messages,
       { role: "user", content: userMessage },
     ];
+
     setMessages(newMessages);
 
     try {
-      const response = await sendPlanChat(userMessage, messages);
-      try {
-        const parsed = JSON.parse(response);
-        if (parsed.schedule) onScheduleUpdate(parsed.schedule);
-        setMessages([
-          ...newMessages,
-          { role: "assistant", content: parsed.message || response },
-        ]);
-      } catch {
-        setMessages([...newMessages, { role: "assistant", content: response }]);
+      setMessages([...newMessages, { role: "assistant", content: "" }]);
+
+      const response = await sendPlanChat(userMessage, messages, (content) => {
+        setMessages([...newMessages, { role: "assistant", content }]);
+      });
+
+      const cleaned = response
+        .replace(/```json\n?/g, "")
+        .replace(/```/g, "")
+        .trim();
+
+      const parsed = JSON.parse(cleaned);
+
+      if (parsed.type === "schedule" && parsed.schedule) {
+        onScheduleUpdate(parsed.schedule);
       }
+
+      setMessages([
+        ...newMessages,
+        {
+          role: "assistant",
+          content: parsed.message,
+          schedule: parsed.schedule,
+          options: parsed.options,
+        },
+      ]);
     } catch {
       setMessages([
         ...newMessages,
-        { role: "assistant", content: "오류가 발생했어요. 다시 시도해주세요." },
+        {
+          role: "assistant",
+          content: "오류가 발생했어요. 다시 시도해주세요.",
+        },
       ]);
     } finally {
       setIsLoading(false);
@@ -59,39 +86,46 @@ export default function PlanChat({ onScheduleUpdate }: Props) {
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
-        {messages.length === 0 && (
-          <div className="text-center py-8">
-            <p className="text-2xl mb-2">✈️</p>
-            <p className="text-xs text-stone-400">
-              여행 일정을 짜달라고 말해보세요!
-            </p>
-            <p className="text-xs text-stone-300 mt-1">
-              제주도 2박 3일 일정 짜줘
-            </p>
-          </div>
-        )}
         {messages.map((msg, idx) => (
           <div
             key={idx}
-            className={`flex ${
-              msg.role === "user" ? "justify-end" : "justify-start"
+            className={`flex flex-col ${
+              msg.role === "user" ? "items-end" : "items-start"
             }`}
           >
             <div
-              className={`max-w-[80%] px-3 py-2 rounded-2xl text-sm leading-relaxed ${
+              className={`max-w-[90%] px-3 py-2 rounded-2xl text-sm ${
                 msg.role === "user"
                   ? "bg-sky-400 text-white rounded-br-sm"
                   : "bg-sky-50 text-stone-700 rounded-bl-sm"
               }`}
             >
               {msg.content}
+              {msg.schedule && <SchedulePanel schedule={msg.schedule} />}
             </div>
+
+            {msg.options &&
+              msg.options.length > 0 &&
+              idx === messages.length - 1 && (
+                <div className="flex flex-wrap gap-2 mt-2 ml-1">
+                  {msg.options.map((opt) => (
+                    <button
+                      key={opt}
+                      onClick={() => sendMessage(opt)}
+                      className="text-xs bg-white border border-sky-300 text-sky-600 px-3 py-1.5 rounded-full hover:bg-sky-100 transition-colors"
+                    >
+                      {opt}
+                    </button>
+                  ))}
+                </div>
+              )}
           </div>
         ))}
+
         {isLoading && (
           <div className="flex justify-start">
-            <div className="bg-sky-50 px-4 py-2 rounded-2xl rounded-bl-sm text-sm text-stone-400">
-              일정 생성 중...
+            <div className="bg-sky-50 px-4 py-2 rounded-2xl text-sm text-stone-400">
+              생각 중...
             </div>
           </div>
         )}
@@ -103,13 +137,14 @@ export default function PlanChat({ onScheduleUpdate }: Props) {
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && sendMessage()}
           placeholder="메시지를 입력하세요..."
-          className="flex-1 border border-sky-200 px-3 py-2 rounded-xl text-sm bg-sky-50 placeholder-sky-300 focus:outline-none focus:border-sky-400"
+          className="flex-1 border border-sky-200 px-3 py-2 rounded-xl text-sm"
           disabled={isLoading}
         />
+
         <button
-          onClick={sendMessage}
+          onClick={() => sendMessage()}
           disabled={isLoading}
-          className="bg-sky-400 hover:bg-sky-500 text-white px-4 py-2 rounded-xl text-sm transition-colors disabled:opacity-50"
+          className="bg-sky-400 text-white px-4 py-2 rounded-xl disabled:opacity-50"
         >
           전송
         </button>
