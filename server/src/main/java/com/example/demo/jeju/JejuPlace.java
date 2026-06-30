@@ -27,6 +27,10 @@ public class JejuPlace {
     private Double lat;
     private Double lng;
 
+    @Column(name = "main_category")
+    private String mainCategory; // "관광지", "맛집", "카페" 구별용
+    private String region;
+
     @Column(columnDefinition = "text")
     private String description;
 
