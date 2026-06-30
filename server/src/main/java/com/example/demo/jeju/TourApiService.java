@@ -117,7 +117,7 @@ public class TourApiService {
         int contentTypeId
     ) throws Exception {
 
-        for (int page = 100; page <= 200; page++) {
+        for (int page = 1; page <= 200; page++) {
 
             JsonNode items =
                 tourApiClient.getPlaces(
