@@ -8,25 +8,21 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/jeju")
 public class JejuController {
 
-    private final VisitJejuService visitJejuService;
-    private final JejuInitService jejuInitService;
+    private final TourApiService tourApiService;
 
-    public JejuController(VisitJejuService visitJejuService, JejuInitService jejuInitService) {
-        this.visitJejuService = visitJejuService;
-        this.jejuInitService = jejuInitService;
+    public JejuController(TourApiService tourApiService) {
+        this.tourApiService = tourApiService;
     }
 
-    @PostMapping("/init/tourism")
-    public String initTourism() throws Exception {
-        visitJejuService.initFromVisitJeju();
-        return "비짓제주 관광지 데이터 입력 완료!";
+    @PostMapping("/init/all")
+    public String initAll() throws Exception {
+        tourApiService.initAllJejuPlaces();
+        return "TourAPI 데이터 저장 완료";
     }
 
-    @PostMapping("/init/food")
-    public String initFood() throws Exception {
-        jejuInitService.initJejuPlaces();
-        return "제주 맛집 데이터 입력 완료!";
+    @PostMapping("/embedding")
+    public String embedding() throws Exception {
+        tourApiService.createEmbeddings();
+        return "Embedding 완료";
     }
-
-    
 }
