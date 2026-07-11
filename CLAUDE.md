@@ -14,6 +14,10 @@ See `client/CLAUDE.md` (→ `client/AGENTS.md`) for a client-specific note: this
 Next.js version has breaking API changes vs. training data — check
 `node_modules/next/dist/docs/` before relying on remembered Next.js APIs.
 
+Additional docs: `docs/PROJECT.md` (project description, external integrations,
+local env setup), `docs/CONVENTIONS.md` (commit/branch naming, code layout),
+`docs/DESIGN.md` (current UI/styling state).
+
 ## Commands
 
 ### Client (`client/`)
