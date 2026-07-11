@@ -1,0 +1,28 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run dev)",
+      "Bash(npm run build)",
+      "Bash(npm run start)",
+      "Bash(npm run lint)",
+      "Bash(npm install)",
+      "Bash(./gradlew test)",
+      "Bash(./gradlew test *)",
+      "Bash(./gradlew build)",
+      "Bash(./gradlew build *)",
+      "Bash(./gradlew bootRun)",
+      "Bash(git status)",
+      "Bash(git status *)",
+      "Bash(git diff)",
+      "Bash(git diff *)",
+      "Bash(git log)",
+      "Bash(git log *)",
+      "Bash(git branch)",
+      "Bash(git branch *)",
+      "Bash(git show)",
+      "Bash(git show *)",
+      "Bash(git remote -v)",
+      "Bash(git blame *)"
+    ]
+  }
+}
