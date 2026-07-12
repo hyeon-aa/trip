@@ -3,9 +3,9 @@
 # Reads tool_input JSON from stdin; exits 2 + stderr message to block, 0 to allow.
 
 input=$(cat)
-command=$(printf '%s' "$input" | jq -r '.tool_input.command // empty')
+raw_command=$(printf '%s' "$input" | jq -r '.tool_input.command // empty')
 
-if [ -z "$command" ]; then
+if [ -z "$raw_command" ]; then
   exit 0
 fi
 
@@ -13,6 +13,26 @@ block() {
   echo "Blocked by block-dangerous-commands.sh: $1" >&2
   exit 2
 }
+
+# Strip heredoc bodies (e.g. `git commit -m "$(cat <<'EOF' ... EOF)"`) before
+# pattern-matching — commit messages / PR bodies routinely quote things like
+# "git push --force" as documentation, not as commands to run.
+strip_heredocs() {
+  local in_heredoc=0 delim=""
+  while IFS= read -r line || [ -n "$line" ]; do
+    if [ "$in_heredoc" = "1" ]; then
+      [ "$line" = "$delim" ] && in_heredoc=0
+      continue
+    fi
+    if [[ "$line" =~ \<\<-?[[:space:]]*[\'\"]?([A-Za-z_][A-Za-z0-9_]*)[\'\"]? ]]; then
+      delim="${BASH_REMATCH[1]}"
+      in_heredoc=1
+    fi
+    printf '%s\n' "$line"
+  done <<< "$1"
+}
+
+command=$(strip_heredocs "$raw_command")
 
 # git push --force / -f (allow --force-with-lease)
 if printf '%s' "$command" | grep -qE '\bgit\b[^|;&]*\bpush\b' \
