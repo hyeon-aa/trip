@@ -76,8 +76,10 @@ below — via a place search, not free text).
    The route is anchored at both ends: every day starts/ends near the accommodation
    (if provided), except the last day, which ends near the airport instead. A second
    Gemini call (`assignTimesForDay`) then assigns realistic visit time windows; it's
-   given the full conversation text plus whether this is the first/last day, so it can
-   respect an arrival time (day 1) or departure time (last day) mentioned in the chat.
+   told whether this is the first/last day, and only for those gets the full
+   conversation text too, so it can respect an arrival time (day 1) or departure time
+   (last day) mentioned in the chat — middle days skip the conversation text to avoid
+   resending it on every call.
 8. Result is streamed back over SSE as a single JSON payload.
 
 The AI must only ever choose place ids from the lists given in the prompt — it never
