@@ -2,6 +2,7 @@ package com.example.demo.plan;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -51,6 +52,8 @@ public class PlanChatController {
 
         String message = request.message();
         List<ChatMessageDto> history = request.history();
+        Double accommodationLat = request.accommodationLat();
+        Double accommodationLng = request.accommodationLng();
 
         // 1. 사용자 위시리스트 조회 및 맵 변환
         List<Wishlist> wishlist = wishlistRepository.findAll();
@@ -71,7 +74,7 @@ public class PlanChatController {
                 .map(ChatMessageDto::content)
                 .collect(Collectors.joining(" "))
                 + " " + message;
-        
+
         // 3. [핵심 추가] 사용자의 대화 흐름이나 수정 요청에서 특정 조건(지역, 카테고리) 낚아채기
         String targetRegion = null;
         if (conversationText.contains("서부")) targetRegion = "서부";
@@ -97,7 +100,7 @@ public class PlanChatController {
 
         // 4. 질문 기반 임베딩 생성 및 하이브리드 필터링 검색 수행
         String queryEmbedding = aiService.createEmbedding(conversationText);
-        
+
         // 새로 개편한 레포지토리의 findSimilarPlacesWithFilter 메서드 호출
         List<JejuPlace> relatedPlaces = jejuPlaceRepository.findSimilarPlacesWithFilter(
             queryEmbedding,
@@ -126,7 +129,7 @@ public class PlanChatController {
 
         Map<String, List<Map.Entry<String, JejuPlace>>> regionMap = placeIdMap.entrySet().stream()
             .collect(Collectors.groupingBy(e -> e.getValue().getRegion())); // 엔티티에 추가한 region 활용
-            
+
         StringBuilder placesBuilder = new StringBuilder();
         for (String region : List.of("동부", "서부", "남부", "제주시")) {
             List<Map.Entry<String, JejuPlace>> regionPlaces = regionMap.get(region);
@@ -153,10 +156,12 @@ public class PlanChatController {
             당신은 수천 명의 여행 일정을 설계해 온 전문 여행 플래너입니다.
 
             [대화 진행 규칙]
-            1. 다음 정보를 대화를 통해 순서대로 하나씩 파악하세요.
-               - 여행 스타일 (자연/맛집/액티비티/휴양 등)
-               - 동행자 (혼자/연인/가족/친구)
-               - 여행 기간 (몇 박 며칠)
+            1. 다음 정보를 대화를 통해 순서대로 하나씩 파악하세요. 이 3가지를 물을 때는
+               반드시 options에 선택 가능한 보기를 포함하세요 (사용자가 직접 입력할 수도
+               있으니 자유 응답도 항상 허용됩니다).
+               - 여행 스타일 (자연/맛집/액티비티/휴양 등) → options 예: ["자연", "맛집", "액티비티", "휴양"]
+               - 동행자 (혼자/연인/가족/친구) → options 예: ["혼자", "연인", "가족", "친구"]
+               - 여행 기간 (몇 박 며칠) → options 예: ["당일치기", "1박 2일", "2박 3일", "3박 4일"]
             2. 사용자가 이미 답한 정보는 절대 다시 묻지 마세요.
             3. 사용자가 말하지 않은 내용을 추측하거나 단정짓지 마세요.
             4. 사용자가 한 메시지에 여러 정보를 한꺼번에 알려주면 추가 질문 없이 바로 일정을 생성하세요.
@@ -264,7 +269,20 @@ public class PlanChatController {
                             .collect(Collectors.toList());
 
                         // 최적 동선 정렬 및 시간 배정 적용
-                        List<ObjectNode> ordered = optimalOrder(withCoords, isLastDay);
+                        // 매일 숙소에서 출발해서(있으면) 숙소로 돌아오는 걸 기본으로 하되,
+                        // 마지막 날만 공항에서 끝나는 걸로 앵커를 바꾼다.
+                        Double endLat;
+                        Double endLng;
+                        if (isLastDay) {
+                            endLat = AIRPORT_LAT;
+                            endLng = AIRPORT_LNG;
+                        } else {
+                            endLat = accommodationLat;
+                            endLng = accommodationLng;
+                        }
+                        List<ObjectNode> ordered = optimalOrder(
+                            withCoords, accommodationLat, accommodationLng, endLat, endLng
+                        );
                         assignTimesForDay(ordered, mapper);
                         ordered.addAll(withoutCoords);
 
@@ -345,9 +363,13 @@ public class PlanChatController {
         }
     }
 
-    private List<ObjectNode> optimalOrder(List<ObjectNode> places, boolean endNearAirport) {
+    // startLat/startLng, endLat/endLng: 그날 동선의 시작/종료 앵커(숙소·공항 등). null이면
+    // 해당 쪽은 앵커 없이(순수 방문지 간 거리만) 최적화한다.
+    private List<ObjectNode> optimalOrder(
+        List<ObjectNode> places, Double startLat, Double startLng, Double endLat, Double endLng
+    ) {
         if (places.size() <= 1) return new ArrayList<>(places);
-        if (places.size() > 8) return nearestNeighborOrder(places);
+        if (places.size() > 8) return nearestNeighborOrder(places, startLat, startLng);
 
         List<List<ObjectNode>> permutations = new ArrayList<>();
         permute(new ArrayList<>(places), 0, permutations);
@@ -363,9 +385,13 @@ public class PlanChatController {
                     perm.get(i + 1).get("lat").asDouble(), perm.get(i + 1).get("lng").asDouble()
                 );
             }
-            if (endNearAirport) {
+            if (startLat != null && startLng != null) {
+                ObjectNode first = perm.get(0);
+                total += haversine(startLat, startLng, first.get("lat").asDouble(), first.get("lng").asDouble());
+            }
+            if (endLat != null && endLng != null) {
                 ObjectNode last = perm.get(perm.size() - 1);
-                total += haversine(last.get("lat").asDouble(), last.get("lng").asDouble(), AIRPORT_LAT, AIRPORT_LNG);
+                total += haversine(last.get("lat").asDouble(), last.get("lng").asDouble(), endLat, endLng);
             }
             if (total < bestDistance) {
                 bestDistance = total;
@@ -387,11 +413,22 @@ public class PlanChatController {
         }
     }
 
-    private List<ObjectNode> nearestNeighborOrder(List<ObjectNode> places) {
+    private List<ObjectNode> nearestNeighborOrder(List<ObjectNode> places, Double startLat, Double startLng) {
         if (places.isEmpty()) return new ArrayList<>();
         List<ObjectNode> remaining = new ArrayList<>(places);
         List<ObjectNode> result = new ArrayList<>();
-        ObjectNode current = remaining.remove(0);
+
+        ObjectNode current;
+        if (startLat != null && startLng != null) {
+            current = Collections.min(
+                remaining,
+                Comparator.comparingDouble(p ->
+                    haversine(startLat, startLng, p.get("lat").asDouble(), p.get("lng").asDouble()))
+            );
+            remaining.remove(current);
+        } else {
+            current = remaining.remove(0);
+        }
         result.add(current);
 
         while (!remaining.isEmpty()) {

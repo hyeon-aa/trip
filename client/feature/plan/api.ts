@@ -26,10 +26,17 @@ export interface ChatMessage {
   placeSearch?: boolean;
 }
 
+export interface Accommodation {
+  lat: number;
+  lng: number;
+  name: string;
+}
+
 export const sendPlanChat = async (
   message: string,
   history: ChatMessage[],
-  onMessage: (content: string) => void
+  onMessage: (content: string) => void,
+  accommodation?: Accommodation
 ): Promise<string> => {
   const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/plan/chat`, {
     method: "POST",
@@ -37,7 +44,12 @@ export const sendPlanChat = async (
       "Content-Type": "application/json",
       Accept: "text/event-stream",
     },
-    body: JSON.stringify({ message, history }),
+    body: JSON.stringify({
+      message,
+      history,
+      accommodationLat: accommodation?.lat,
+      accommodationLng: accommodation?.lng,
+    }),
   });
 
   if (!res.body) {
