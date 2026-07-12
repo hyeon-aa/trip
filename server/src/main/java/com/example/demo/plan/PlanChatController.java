@@ -237,8 +237,11 @@ public class PlanChatController {
                     ObjectNode scheduleNode = (ObjectNode) root.get("schedule");
                     ArrayNode days = (ArrayNode) scheduleNode.get("days");
 
+                    String conversationContext = buildConversationText(history, message);
+
                     for (int dayIdx = 0; dayIdx < days.size(); dayIdx++) {
                         JsonNode dayNode = days.get(dayIdx);
+                        boolean isFirstDay = (dayIdx == 0);
                         boolean isLastDay = (dayIdx == days.size() - 1);
                         ArrayNode places = (ArrayNode) dayNode.get("places");
 
@@ -287,7 +290,7 @@ public class PlanChatController {
                         List<ObjectNode> ordered = optimalOrder(
                             withCoords, accommodationLat, accommodationLng, endLat, endLng
                         );
-                        assignTimesForDay(ordered, mapper);
+                        assignTimesForDay(ordered, mapper, conversationContext, isFirstDay, isLastDay);
                         ordered.addAll(withoutCoords);
 
                         places.removeAll();
@@ -304,6 +307,17 @@ public class PlanChatController {
         }).start();
 
         return emitter;
+    }
+
+    private String buildConversationText(List<ChatMessageDto> history, String message) {
+        StringBuilder sb = new StringBuilder();
+        if (history != null) {
+            for (ChatMessageDto m : history) {
+                sb.append(m.role()).append(": ").append(m.content()).append("\n");
+            }
+        }
+        sb.append("user: ").append(message).append("\n");
+        return sb.toString();
     }
 
     private JsonNode parseAiJson(String raw, ObjectMapper mapper) {
@@ -326,7 +340,13 @@ public class PlanChatController {
         }
     }
 
-    private void assignTimesForDay(List<ObjectNode> orderedPlaces, ObjectMapper mapper) {
+    private void assignTimesForDay(
+        List<ObjectNode> orderedPlaces,
+        ObjectMapper mapper,
+        String conversationContext,
+        boolean isFirstDay,
+        boolean isLastDay
+    ) {
         if (orderedPlaces.isEmpty()) return;
 
         StringBuilder sb = new StringBuilder();
@@ -336,9 +356,22 @@ public class PlanChatController {
               .append(" (").append(p.get("category").asText()).append(")\n");
         }
 
+        StringBuilder dayConstraints = new StringBuilder();
+        if (isFirstDay) {
+            dayConstraints.append("- 이 날은 여행 첫째 날입니다. 대화에서 첫날 도착 시간이 언급됐다면, ")
+                .append("그 시간 이전에는 어떤 장소도 배정하지 마세요.\n");
+        }
+        if (isLastDay) {
+            dayConstraints.append("- 이 날은 여행 마지막 날입니다. 대화에서 출발(비행기) 시간이 언급됐다면, ")
+                .append("그 시간에 늦지 않도록 마지막 장소 종료 시간과 공항 이동 여유를 확보하세요.\n");
+        }
+
         String prompt = String.format("""
             다음은 하루 동안 방문할 장소들을 실제 이동 동선 순서대로 나열한 것입니다.
             각 장소마다 현실적인 방문 시작~종료 시간(HH:mm~HH:mm)을 배정해주세요.
+
+            [지금까지의 대화 - 도착/출발 시간 제약 참고용]
+            %s
 
             [방문 순서]
             %s
@@ -348,10 +381,10 @@ public class PlanChatController {
             - 식사는 아침(08:00~10:00), 점심(12:00~14:00), 저녁(18:00~20:00) 시간대를 고려하세요.
             - 관광지는 1~2시간, 카페는 1시간 내외로 배정하세요.
             - 시간이 겹치지 않고, 앞 장소 종료 후 다음 장소가 이어지도록 하세요.
-
+            %s
             반드시 아래 JSON 형식으로만 응답하세요:
             { "times": ["07:00~17:00", "17:30~18:30", "..."] }
-            """, sb.toString());
+            """, conversationContext, sb.toString(), dayConstraints.toString());
 
         try {
             String response = aiService.chatWithGemini(List.of(new ChatMessageDto("user", prompt)));
