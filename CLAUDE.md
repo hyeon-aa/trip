@@ -16,7 +16,9 @@ Next.js version has breaking API changes vs. training data — check
 
 Additional docs: `docs/PROJECT.md` (project description, external integrations,
 local env setup), `docs/CONVENTIONS.md` (commit/branch naming, code layout),
-`docs/DESIGN.md` (current UI/styling state).
+`docs/DESIGN.md` (current UI/styling state), `docs/PROMPTS.md` (itinerary-generation
+prompts used by `PlanChatController`, kept in sync with the source), `docs/API.md`
+(REST endpoint reference, auth/CORS state, data model).
 
 ## Commands
 
