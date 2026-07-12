@@ -25,12 +25,17 @@ docker info >/dev/null 2>&1 && echo OK || echo DOWN
 ## 2. 기존 컨테이너 탐색 (이름 무관, 포트 기준)
 
 ```bash
-docker ps -a --format '{{.Names}}\t{{.Ports}}'
+docker ps -a --format '{{.Names}}\t{{.Ports}}\t{{.Status}}'
 ```
 
 - `5434->` 매핑이 있는 컨테이너 → Postgres 컨테이너로 취급
 - `6379->` 매핑이 있는 컨테이너 → Redis 컨테이너로 취급
-- 각각 상태가 `Up`이 아니면 `docker start <name>`으로 기동
+- 상태 문자열로 분기 (`/dev-down`이 컨테이너를 `pause`로 내려두므로, 단순히
+  `Up`으로 시작하는지만 보면 `Up ... (Paused)`도 이미 떠 있다고 착각해서
+  실제로는 얼어붙은 채로 넘어간다):
+  - `Up ... (Paused)` 포함 → `docker unpause <name>`
+  - `Up`으로 시작(Paused 아님) → 이미 정상 기동 중, 아무것도 안 함
+  - 그 외(`Exited` 등) → `docker start <name>`
 
 ## 3. 없으면 새로 생성
 
