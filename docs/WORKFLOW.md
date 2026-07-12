@@ -102,12 +102,17 @@ git checkout -b feat/<짧은-이름>   # 버그 이슈면 fix/<짧은-이름>
 3. `gh pr create`로 PR 생성
 4. 생성 직후 바로 `/code-review`를 실행해 diff를 리뷰하고, 발견한 이슈를 PR에
    인라인 코멘트로 남긴다 (`--comment` 옵션)
+5. `gh pr checks`로 CI(`.github/workflows/ci.yml`) 상태를 확인한다 — `pending`이면
+   기다렸다 재확인, `fail`이면 로그를 읽고 원인이 명확하면 바로 고쳐서 push한다.
+   CI가 다 통과할 때까지 6단계(머지)로 넘어가지 않는다. (2026-07-12, PR #14에서
+   리뷰 코멘트만 보고 넘어갔으면 깨진 client CI가 그대로 머지될 뻔한 적이 있어서
+   추가된 단계.)
 
 ## 6. 확인 후 머지
 
-`/pr`이 남긴 리뷰 코멘트를 사용자가 확인하고, 문제 없으면 머지를 요청한다.
-그러면 `gh pr merge --merge`로 머지한다 (기존 PR들과 같은 방식 — squash나
-rebase가 아니라 일반 merge commit).
+CI가 전부 통과한 걸 확인한 뒤, `/pr`이 남긴 리뷰 코멘트까지 사용자가 확인하고
+문제 없으면 머지를 요청한다. 그러면 `gh pr merge --merge`로 머지한다 (기존
+PR들과 같은 방식 — squash나 rebase가 아니라 일반 merge commit).
 
 머지 시 `main`과 브랜치 사이에 충돌이 있으면(예: 같은 문서를 서로 다른
 브랜치에서 각자 업데이트한 경우) 어느 쪽 내용이 실제 코드 상태와 더 맞는지
