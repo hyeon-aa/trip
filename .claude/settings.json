@@ -10,6 +10,17 @@
           }
         ]
       }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.file_path // .tool_response.filePath' | { read -r f; case \"$f\" in *client/*.ts|*client/*.tsx|*client/*.js|*client/*.jsx) cd \"$CLAUDE_PROJECT_DIR/client\" && npx eslint --fix \"$f\" ;; esac; } || true"
+          }
+        ]
+      }
     ]
   },
   "permissions": {
