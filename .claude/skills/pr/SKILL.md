@@ -23,12 +23,17 @@ git status --porcelain
 
 ## 2. 브랜치 상태 파악
 
+로컬 `main`은 fetch를 안 했으면 origin보다 뒤처져 있을 수 있어서, 그 상태로
+`main..HEAD`를 쓰면 이 브랜치와 무관한 커밋까지 diff에 섞여 PR 범위를 착각하게
+된다 — 반드시 먼저 fetch하고 `origin/main` 기준으로 비교한다:
+
 ```bash
+git fetch origin main --quiet
 git branch --show-current
-git log main..HEAD --oneline
-git diff main...HEAD --stat
+git log origin/main..HEAD --oneline
+git diff origin/main...HEAD --stat
 ```
-`main..HEAD`에 커밋이 없으면 올릴 게 없다고 안내하고 중단.
+`origin/main..HEAD`에 커밋이 없으면 올릴 게 없다고 안내하고 중단.
 
 ## 3. 원격 반영
 
