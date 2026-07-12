@@ -5,7 +5,7 @@ import { Wishlist } from "@/types/wishlist/wishlist";
 interface Props {
   wishlist: Wishlist[];
   onDelete: (id: number) => void;
-  onClickItem: (item: Wishlist) => void;
+  onClickItem?: (item: Wishlist) => void;
 }
 
 export default function WishlistPanel({
@@ -30,8 +30,10 @@ export default function WishlistPanel({
         {wishlist.map((item) => (
           <div
             key={item.id}
-            className="flex justify-between items-center p-3 bg-sky-50 rounded-xl cursor-pointer hover:bg-sky-100 transition-colors"
-            onClick={() => onClickItem(item)}
+            className={`flex justify-between items-center p-3 bg-sky-50 rounded-xl transition-colors ${
+              onClickItem ? "cursor-pointer hover:bg-sky-100" : ""
+            }`}
+            onClick={onClickItem ? () => onClickItem(item) : undefined}
           >
             <div>
               <p className="text-sm font-medium text-stone-700">{item.name}</p>
