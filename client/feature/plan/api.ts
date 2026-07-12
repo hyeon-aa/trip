@@ -21,6 +21,9 @@ export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
   options?: string[];
+  multiSelect?: boolean;
+  timePicker?: boolean;
+  placeSearch?: boolean;
 }
 
 export const sendPlanChat = async (
