@@ -309,7 +309,10 @@ public class PlanChatController {
                         List<ObjectNode> ordered = optimalOrder(
                             withCoords, accommodationLat, accommodationLng, endLat, endLng
                         );
-                        assignTimesForDay(ordered, mapper, conversationContext, isFirstDay, isLastDay);
+                        // 도착/출발 시간 제약은 첫/마지막 날에만 의미가 있으므로, 그 외
+                        // 날짜는 대화 전체를 프롬프트에 실어 보내지 않는다(토큰 낭비 방지).
+                        String dayConversationContext = (isFirstDay || isLastDay) ? conversationContext : "";
+                        assignTimesForDay(ordered, mapper, dayConversationContext, isFirstDay, isLastDay);
                         ordered.addAll(withoutCoords);
 
                         places.removeAll();

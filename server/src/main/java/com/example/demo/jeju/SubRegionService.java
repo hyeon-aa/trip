@@ -66,7 +66,19 @@ public class SubRegionService {
         JsonNode documents = objectMapper.readTree(response).path("documents");
         if (documents.isEmpty()) return "알수없음";
 
-        String name = documents.get(0).path("region_3depth_name").asText("");
+        // 응답에는 법정동(B)/행정동(H) 문서가 같이 올 수 있는데, 배열 순서가 항상
+        // 고정이라는 보장이 없다. region_type="B"(법정동)를 명시적으로 찾아서 쓰고,
+        // 없으면 첫 번째 문서로 대체한다 — 좌표마다 다른 타입 이름이 섞여
+        // "같은 읍면동으로 통일" 그룹핑이 흔들리는 걸 막기 위함.
+        JsonNode target = documents.get(0);
+        for (JsonNode doc : documents) {
+            if ("B".equals(doc.path("region_type").asText(""))) {
+                target = doc;
+                break;
+            }
+        }
+
+        String name = target.path("region_3depth_name").asText("");
         return name.isBlank() ? "알수없음" : name;
     }
 }
