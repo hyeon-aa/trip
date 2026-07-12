@@ -32,39 +32,103 @@ strip_heredocs() {
   done <<< "$1"
 }
 
-command=$(strip_heredocs "$raw_command")
+# has_flag SEGMENT SHORT_LETTER LONG_NAME
+# True if SEGMENT contains a short-option cluster with SHORT_LETTER (e.g. -rf
+# contains r and f) or a long option exactly matching LONG_NAME (or
+# LONG_NAME=value). Long options are matched as whole tokens, not substrings,
+# so "--force" never counts toward an unrelated "-r" check just because the
+# word "force" happens to contain the letter r.
+has_flag() {
+  local seg="$1" short="$2" long="$3" word rest
+  local -a words
+  read -ra words <<< "$seg"
+  for word in "${words[@]}"; do
+    case "$word" in
+      --*)
+        if [ -n "$long" ] && { [ "$word" = "$long" ] || [ "${word%%=*}" = "$long" ]; }; then
+          return 0
+        fi
+        ;;
+      -*)
+        rest="${word#-}"
+        case "$rest" in
+          *"$short"*) return 0 ;;
+        esac
+        ;;
+    esac
+  done
+  return 1
+}
 
-# git push --force / -f (allow --force-with-lease)
-if printf '%s' "$command" | grep -qE '\bgit\b[^|;&]*\bpush\b' \
-  && printf '%s' "$command" | grep -qE '(--force\b|-f\b)' \
-  && ! printf '%s' "$command" | grep -qE -- '--force-with-lease'; then
-  block "git push --force/-f can overwrite remote history. Use --force-with-lease or ask the user first."
-fi
+# Join backslash-newline line continuations into a space so a flag split
+# across two physical lines (`rm -r \` + newline + `-f path`) is still seen
+# as one segment below. (Pure bash, not sed — BSD sed on macOS doesn't
+# support the GNU ":a;N;$!ba" slurp idiom used for this.)
+join_continuations() {
+  local buf="" line
+  while IFS= read -r line || [ -n "$line" ]; do
+    if [[ "$line" == *\\ ]]; then
+      buf+="${line%\\} "
+    else
+      printf '%s\n' "${buf}${line}"
+      buf=""
+    fi
+  done <<< "$1"
+  [ -n "$buf" ] && printf '%s\n' "$buf"
+  return 0
+}
 
-# git reset --hard
-if printf '%s' "$command" | grep -qE '\bgit\b[^|;&]*\breset\b[^|;&]*--hard\b'; then
-  block "git reset --hard discards uncommitted work. Confirm with the user first."
-fi
+after_heredocs=$(strip_heredocs "$raw_command")
+joined=$(join_continuations "$after_heredocs")
 
-# git clean -fd (any order/combination of f and d flags)
-if printf '%s' "$command" | grep -qE '\bgit\b[^|;&]*\bclean\b[^|;&]*-[a-zA-Z]*f[a-zA-Z]*d|\bgit\b[^|;&]*\bclean\b[^|;&]*-[a-zA-Z]*d[a-zA-Z]*f'; then
-  block "git clean -fd permanently deletes untracked files. Confirm with the user first."
-fi
+# Split into segments on statement separators (;, &&, ||, |, newline) so every
+# check below only looks within a single sub-command — not the whole
+# multi-command string. This is what keeps `git push origin main && curl -f
+# ...` from being misread as a force-push just because "-f" appears somewhere
+# later in an unrelated command.
+segments=$(printf '%s' "$joined" | tr ';|&' '\n\n\n')
 
-# git branch -D on main/master
-if printf '%s' "$command" | grep -qE '\bgit\b[^|;&]*\bbranch\b[^|;&]*-D\b[^|;&]*\b(main|master)\b'; then
-  block "Force-deleting main/master is almost certainly a mistake."
-fi
+while IFS= read -r segment || [ -n "$segment" ]; do
+  [ -z "$segment" ] && continue
 
-# rm -rf (any order of flags, e.g. -rf, -fr, -r -f, --recursive --force)
-if printf '%s' "$command" | grep -qE '\brm\b[^|;&]*(-[a-zA-Z]*r[a-zA-Z]*f[a-zA-Z]*|-[a-zA-Z]*f[a-zA-Z]*r[a-zA-Z]*|--recursive[^|;&]*--force|--force[^|;&]*--recursive)'; then
-  block "rm -rf is destructive and hard to reverse. Confirm the exact path with the user first."
-fi
+  # git push --force / -f (allow --force-with-lease)
+  if printf '%s' "$segment" | grep -qE '\bgit\b.*\bpush\b'; then
+    if has_flag "$segment" f --force \
+      && ! printf '%s' "$segment" | grep -qE -- '--force-with-lease'; then
+      block "git push --force/-f can overwrite remote history. Use --force-with-lease or ask the user first."
+    fi
+  fi
 
-# DROP TABLE / TRUNCATE via psql (raw SQL passed with -c, or heredoc/pipe into psql)
-if printf '%s' "$command" | grep -qE '\bpsql\b' \
-  && printf '%s' "$command" | grep -qiE '\b(DROP[[:space:]]+TABLE|TRUNCATE)\b'; then
-  block "Raw DROP TABLE/TRUNCATE via psql is destructive. Confirm with the user first."
-fi
+  # git reset --hard
+  if printf '%s' "$segment" | grep -qE '\bgit\b.*\breset\b.*--hard\b'; then
+    block "git reset --hard discards uncommitted work. Confirm with the user first."
+  fi
+
+  # git clean -f -d (any order, combined or separate flags; -d has no long form)
+  if printf '%s' "$segment" | grep -qE '\bgit\b.*\bclean\b'; then
+    if has_flag "$segment" f --force && has_flag "$segment" d ""; then
+      block "git clean -fd permanently deletes untracked files. Confirm with the user first."
+    fi
+  fi
+
+  # git branch -D on main/master
+  if printf '%s' "$segment" | grep -qE '\bgit\b.*\bbranch\b.*-D\b.*\b(main|master)\b'; then
+    block "Force-deleting main/master is almost certainly a mistake."
+  fi
+
+  # rm -rf (combined or separate flags, short or long form)
+  if printf '%s' "$segment" | grep -qE '\brm\b'; then
+    if has_flag "$segment" r --recursive && has_flag "$segment" f --force; then
+      block "rm -rf is destructive and hard to reverse. Confirm the exact path with the user first."
+    fi
+  fi
+
+  # DROP TABLE / TRUNCATE via psql (raw SQL passed with -c), scoped to the
+  # same segment as the psql invocation itself.
+  if printf '%s' "$segment" | grep -qE '\bpsql\b' \
+    && printf '%s' "$segment" | grep -qiE '\b(DROP[[:space:]]+TABLE|TRUNCATE)\b'; then
+    block "Raw DROP TABLE/TRUNCATE via psql is destructive. Confirm with the user first."
+  fi
+done <<< "$segments"
 
 exit 0
