@@ -20,7 +20,6 @@ export interface Schedule {
 export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
-  schedule?: Schedule;
   options?: string[];
 }
 

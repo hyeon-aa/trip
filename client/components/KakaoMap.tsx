@@ -8,6 +8,7 @@ import {
 } from "@/feature/wishlist/api";
 import { Place } from "@/types/place/place";
 import { Wishlist } from "@/types/wishlist/wishlist";
+import { getDayColor } from "@/lib/dayColors";
 import { useEffect, useState } from "react";
 import {
   CustomOverlayMap,
@@ -16,6 +17,7 @@ import {
   Polyline,
 } from "react-kakao-maps-sdk";
 import PlanChat from "./PlanChat";
+import SchedulePanel from "./SchedulePanel";
 import SearchBar from "./SearchBar";
 import WishlistPanel from "./WishlistPanel";
 
@@ -119,7 +121,7 @@ export default function KakaoMap() {
               >
                 <div
                   style={{
-                    background: day.day === 1 ? "#38bdf8" : "#fb923c",
+                    background: getDayColor(day.day),
                     color: "white",
                     borderRadius: "50%",
                     width: 28,
@@ -149,7 +151,7 @@ export default function KakaoMap() {
               key={`route-${day.day}`}
               path={path}
               strokeWeight={3}
-              strokeColor={day.day === 1 ? "#38bdf8" : "#fb923c"}
+              strokeColor={getDayColor(day.day)}
               strokeOpacity={0.7}
               strokeStyle="solid"
             />
@@ -157,8 +159,20 @@ export default function KakaoMap() {
         })}
       </Map>
 
-      {/* 오른쪽 - 채팅 + 일정 */}
+      {/* 오른쪽 - 일정 + 채팅 */}
       <div className="w-80 flex flex-col bg-white border-l border-sky-100 shadow-sm">
+        <div className="max-h-[45%] overflow-y-auto border-b border-sky-100 p-4">
+          <p className="text-xs font-medium text-sky-600 uppercase tracking-wider">
+            일정
+          </p>
+          {scheduleData ? (
+            <SchedulePanel schedule={scheduleData} />
+          ) : (
+            <p className="text-xs text-stone-400 mt-2">
+              대화를 통해 일정이 만들어지면 여기에 표시돼요.
+            </p>
+          )}
+        </div>
         <div className="flex-1 overflow-hidden flex flex-col min-h-0">
           <PlanChat onScheduleUpdate={handleScheduleUpdate} />
         </div>

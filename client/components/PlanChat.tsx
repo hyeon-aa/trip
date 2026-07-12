@@ -2,7 +2,6 @@
 
 import { ChatMessage, Schedule, sendPlanChat } from "@/feature/plan/api";
 import { useState } from "react";
-import SchedulePanel from "./SchedulePanel";
 
 interface Props {
   onScheduleUpdate: (schedule: Schedule) => void;
@@ -57,7 +56,6 @@ export default function PlanChat({ onScheduleUpdate }: Props) {
         {
           role: "assistant",
           content: parsed.message,
-          schedule: parsed.schedule,
           options: parsed.options,
         },
       ]);
@@ -101,7 +99,6 @@ export default function PlanChat({ onScheduleUpdate }: Props) {
               }`}
             >
               {msg.content}
-              {msg.schedule && <SchedulePanel schedule={msg.schedule} />}
             </div>
 
             {msg.options &&

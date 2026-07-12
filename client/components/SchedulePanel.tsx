@@ -1,6 +1,7 @@
 "use client";
 
 import { Schedule } from "@/feature/plan/api";
+import { getDayColor } from "@/lib/dayColors";
 
 interface Props {
   schedule: Schedule;
@@ -14,13 +15,25 @@ export default function SchedulePanel({ schedule }: Props) {
           key={day.day}
           className="border border-sky-100 rounded-xl p-3 bg-white"
         >
-          <p className="font-medium text-sky-600 mb-2">Day {day.day}</p>
+          <p
+            className="font-medium mb-2 flex items-center gap-1.5"
+            style={{ color: getDayColor(day.day) }}
+          >
+            <span
+              className="w-2.5 h-2.5 rounded-full inline-block"
+              style={{ background: getDayColor(day.day) }}
+            />
+            Day {day.day}
+          </p>
 
           <div className="space-y-2">
             {day.places.map((place, idx) => (
               <div key={idx} className="bg-sky-50 rounded-lg p-2">
                 <div className="flex items-center gap-2">
-                  <span className="w-5 h-5 bg-sky-100 text-sky-600 rounded-full text-xs flex items-center justify-center">
+                  <span
+                    className="w-5 h-5 text-white rounded-full text-xs flex items-center justify-center"
+                    style={{ background: getDayColor(day.day) }}
+                  >
                     {idx + 1}
                   </span>
 
