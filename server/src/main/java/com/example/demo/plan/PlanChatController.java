@@ -137,16 +137,32 @@ public class PlanChatController {
                 continue;
             }
             placesBuilder.append("\n[").append(region).append("]\n");
-            for (Map.Entry<String, JejuPlace> entry : regionPlaces) {
-                JejuPlace p = entry.getValue();
-                placesBuilder
-                    .append("[")
-                    .append(entry.getKey())
-                    .append("] ")
-                    .append(p.getName())
-                    .append(" (")
-                    .append(p.getCategory())
-                    .append(")\n");
+
+            // 권역 안에서 읍/면/동 단위(sub_region)로 한 번 더 묶어서 같은 날 동선이
+            // 좁은 지역에 모이도록 힌트를 준다. 아직 매핑 안 된 곳은 "기타"로.
+            Map<String, List<Map.Entry<String, JejuPlace>>> subRegionMap = regionPlaces.stream()
+                .collect(Collectors.groupingBy(
+                    e -> {
+                        String sr = e.getValue().getSubRegion();
+                        return (sr == null || sr.isBlank()) ? "기타" : sr;
+                    },
+                    java.util.LinkedHashMap::new,
+                    Collectors.toList()
+                ));
+
+            for (Map.Entry<String, List<Map.Entry<String, JejuPlace>>> subEntry : subRegionMap.entrySet()) {
+                placesBuilder.append("  - ").append(subEntry.getKey()).append("\n");
+                for (Map.Entry<String, JejuPlace> entry : subEntry.getValue()) {
+                    JejuPlace p = entry.getValue();
+                    placesBuilder
+                        .append("    [")
+                        .append(entry.getKey())
+                        .append("] ")
+                        .append(p.getName())
+                        .append(" (")
+                        .append(p.getCategory())
+                        .append(")\n");
+                }
             }
         }
         String placesStr = placesBuilder.toString();
@@ -171,11 +187,14 @@ public class PlanChatController {
             8. 첫째 날 출발 시간이나 마지막 날 비행기 시간을 사용자가 언급하면, 그 시간에 맞춰 일정을 조정하세요.
             9. 같은 날에는 반드시 같은 권역의 장소를 우선 사용하세요.
             10. 동부/서부/남부/제주시를 하루에 섞지 마세요.
-            11. 이동시간 최소화를 최우선으로 고려하세요.
-            12. 마지막 날은 공항 접근성을 고려하세요.
-            13. 첫날 도착 시간이 있다면 그 시간 이전 일정은 배치하지 마세요.
-            14. 마지막날 비행 시간이 있다면 공항 이동시간을 확보하세요.
-            15. 같은 장소를 여러 날에 중복 배치하지 마세요. 이미 다른 날 일정에 넣은 장소는
+            11. 같은 권역 안에서도 장소 목록에 표시된 읍/면/동 하위 그룹을 최대한
+                하나로 통일해서 하루 동선이 여러 읍면동에 흩어지지 않게 하세요
+                (예: 1일차는 서귀포시 위주, 2일차는 애월읍 위주).
+            12. 이동시간 최소화를 최우선으로 고려하세요.
+            13. 마지막 날은 공항 접근성을 고려하세요.
+            14. 첫날 도착 시간이 있다면 그 시간 이전 일정은 배치하지 마세요.
+            15. 마지막날 비행 시간이 있다면 공항 이동시간을 확보하세요.
+            16. 같은 장소를 여러 날에 중복 배치하지 마세요. 이미 다른 날 일정에 넣은 장소는
                 제외하고, 항상 새로운 장소로만 채우세요.
 
             [추천 가능한 실제 제주도 장소 - 반드시 아래 id 중에서만 선택]

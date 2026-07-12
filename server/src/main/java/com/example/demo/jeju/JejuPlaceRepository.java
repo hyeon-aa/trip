@@ -83,4 +83,23 @@ public interface JejuPlaceRepository extends JpaRepository<JejuPlace, Long> {
     );
 
     boolean existsByName(String name);
+
+    @Query("""
+        select j
+        from JejuPlace j
+        where j.subRegion is null
+        """)
+    List<JejuPlace> findWithoutSubRegion(org.springframework.data.domain.Pageable pageable);
+
+    @Modifying
+    @Transactional
+    @Query(value = """
+        UPDATE jeju_place
+        SET sub_region = :subRegion
+        WHERE id = :id
+        """, nativeQuery = true)
+    void updateSubRegion(
+        @Param("id") Long id,
+        @Param("subRegion") String subRegion
+    );
 }

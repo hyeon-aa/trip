@@ -31,6 +31,9 @@ public class JejuPlace {
     private String mainCategory; // "관광지", "맛집", "카페" 구별용
     private String region;
 
+    @Column(name = "sub_region")
+    private String subRegion; // 읍/면/동 단위 (카카오 좌표→행정구역 역지오코딩), region보다 세분화된 값
+
     @Column(columnDefinition = "text")
     private String description;
 
