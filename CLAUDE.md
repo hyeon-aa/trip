@@ -21,7 +21,9 @@ prompts used by `PlanChatController`, kept in sync with the source), `docs/API.m
 (REST endpoint reference, auth/CORS state, data model), `docs/PRD.md` (Korean —
 feature-level requirements and the "why" behind them, not just architecture),
 `docs/PLACE_SEARCH.md` (Korean — how the embedding search + region/sub_region
-grouping pipeline works, step by step).
+grouping pipeline works, step by step), `docs/WORKFLOW.md` (Korean — the
+issue → branch → PRD → implement → PR/review → merge flow, backed by the
+`/issue`, `/commit`, and `/pr` skills).
 
 ## Commands
 

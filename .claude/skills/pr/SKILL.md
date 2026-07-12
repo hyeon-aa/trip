@@ -65,3 +65,28 @@ EOF
 PR 생성 성공하면 바로 이어서 `/code-review`를 실행해 방금 만든 PR의 diff를
 리뷰하고, 발견한 이슈를 PR에 인라인 코멘트로 남긴다 (`--comment` 옵션 사용).
 리뷰까지 끝난 뒤 PR URL과 리뷰 결과 요약을 사용자에게 전달한다.
+
+## 7. 머지 (사용자 확인 후에만)
+
+리뷰 결과를 본 사용자가 머지를 요청하면 그때 진행한다 — 자동 머지 아님:
+```bash
+gh pr view <번호> --json mergeable,mergeStateStatus
+gh pr merge <번호> --merge
+```
+(기존 PR들과 같은 방식 — squash/rebase 아닌 일반 merge commit.) `CONFLICTING`이면
+`main`과 충돌하는 파일을 파악해서 어느 쪽 내용이 실제 코드 상태와 더 맞는지
+확인한 뒤 해결하고 진행한다 — 무조건 최신 커밋을 우선하지 않는다.
+
+## 8. 머지 후 브랜치 정리
+
+머지 직후 바로 이어서 정리한다 — 다음 작업을 이 브랜치 위에서 계속 이어가지
+않기 위함 (오래된 브랜치를 재사용하면 이미 머지된 PR과 다음 작업이 뒤섞인다):
+```bash
+git checkout main
+git pull origin main
+git branch -d <머지한-브랜치>
+git push origin --delete <머지한-브랜치>
+```
+`git branch -d`가 "not fully merged" 경고를 내면(로컬 커밋이 원격/머지 커밋과
+다르게 인식된 경우) 먼저 `git log main..<브랜치> --oneline`으로 실제로 남은
+커밋이 없는지 확인하고, 없으면 `-D`로 강제 삭제한다.
