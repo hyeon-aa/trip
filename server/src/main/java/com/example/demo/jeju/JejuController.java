@@ -9,9 +9,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class JejuController {
 
     private final TourApiService tourApiService;
+    private final SubRegionService subRegionService;
 
-    public JejuController(TourApiService tourApiService) {
+    public JejuController(TourApiService tourApiService, SubRegionService subRegionService) {
         this.tourApiService = tourApiService;
+        this.subRegionService = subRegionService;
     }
 
     @PostMapping("/init/all")
@@ -24,5 +26,11 @@ public class JejuController {
     public String embedding() throws Exception {
         tourApiService.createEmbeddings();
         return "Embedding 완료";
+    }
+
+    @PostMapping("/sub-region")
+    public String subRegion() {
+        subRegionService.fillSubRegions();
+        return "읍면동 매핑 완료";
     }
 }

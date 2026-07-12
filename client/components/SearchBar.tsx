@@ -5,11 +5,10 @@ import { Place } from "@/types/place/place";
 import { useEffect, useState } from "react";
 
 interface Props {
-  onSelectPlace: (place: Place) => void;
   onAddToWishlist: (place: Place) => void;
 }
 
-export default function SearchBar({ onSelectPlace, onAddToWishlist }: Props) {
+export default function SearchBar({ onAddToWishlist }: Props) {
   const [query, setQuery] = useState("");
   const [places, setPlaces] = useState<Place[]>([]);
 
@@ -59,12 +58,7 @@ export default function SearchBar({ onSelectPlace, onAddToWishlist }: Props) {
           {places.map((place) => (
             <div
               key={place.id}
-              className="px-4 py-3 border-b border-sky-50 hover:bg-sky-50 cursor-pointer flex justify-between items-center last:border-0"
-              onClick={() => {
-                onSelectPlace(place);
-                setPlaces([]);
-                setQuery(place.place_name);
-              }}
+              className="px-4 py-3 border-b border-sky-50 flex justify-between items-center last:border-0"
             >
               <div>
                 <p className="font-medium text-sm text-stone-700">
@@ -75,8 +69,7 @@ export default function SearchBar({ onSelectPlace, onAddToWishlist }: Props) {
                 </p>
               </div>
               <button
-                onClick={(e) => {
-                  e.stopPropagation();
+                onClick={() => {
                   onAddToWishlist(place);
                   setPlaces([]);
                   setQuery("");

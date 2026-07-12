@@ -2,6 +2,7 @@ package com.example.demo.plan;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -51,6 +52,8 @@ public class PlanChatController {
 
         String message = request.message();
         List<ChatMessageDto> history = request.history();
+        Double accommodationLat = request.accommodationLat();
+        Double accommodationLng = request.accommodationLng();
 
         // 1. 사용자 위시리스트 조회 및 맵 변환
         List<Wishlist> wishlist = wishlistRepository.findAll();
@@ -71,7 +74,7 @@ public class PlanChatController {
                 .map(ChatMessageDto::content)
                 .collect(Collectors.joining(" "))
                 + " " + message;
-        
+
         // 3. [핵심 추가] 사용자의 대화 흐름이나 수정 요청에서 특정 조건(지역, 카테고리) 낚아채기
         String targetRegion = null;
         if (conversationText.contains("서부")) targetRegion = "서부";
@@ -97,7 +100,7 @@ public class PlanChatController {
 
         // 4. 질문 기반 임베딩 생성 및 하이브리드 필터링 검색 수행
         String queryEmbedding = aiService.createEmbedding(conversationText);
-        
+
         // 새로 개편한 레포지토리의 findSimilarPlacesWithFilter 메서드 호출
         List<JejuPlace> relatedPlaces = jejuPlaceRepository.findSimilarPlacesWithFilter(
             queryEmbedding,
@@ -126,7 +129,7 @@ public class PlanChatController {
 
         Map<String, List<Map.Entry<String, JejuPlace>>> regionMap = placeIdMap.entrySet().stream()
             .collect(Collectors.groupingBy(e -> e.getValue().getRegion())); // 엔티티에 추가한 region 활용
-            
+
         StringBuilder placesBuilder = new StringBuilder();
         for (String region : List.of("동부", "서부", "남부", "제주시")) {
             List<Map.Entry<String, JejuPlace>> regionPlaces = regionMap.get(region);
@@ -134,16 +137,32 @@ public class PlanChatController {
                 continue;
             }
             placesBuilder.append("\n[").append(region).append("]\n");
-            for (Map.Entry<String, JejuPlace> entry : regionPlaces) {
-                JejuPlace p = entry.getValue();
-                placesBuilder
-                    .append("[")
-                    .append(entry.getKey())
-                    .append("] ")
-                    .append(p.getName())
-                    .append(" (")
-                    .append(p.getCategory())
-                    .append(")\n");
+
+            // 권역 안에서 읍/면/동 단위(sub_region)로 한 번 더 묶어서 같은 날 동선이
+            // 좁은 지역에 모이도록 힌트를 준다. 아직 매핑 안 된 곳은 "기타"로.
+            Map<String, List<Map.Entry<String, JejuPlace>>> subRegionMap = regionPlaces.stream()
+                .collect(Collectors.groupingBy(
+                    e -> {
+                        String sr = e.getValue().getSubRegion();
+                        return (sr == null || sr.isBlank()) ? "기타" : sr;
+                    },
+                    java.util.LinkedHashMap::new,
+                    Collectors.toList()
+                ));
+
+            for (Map.Entry<String, List<Map.Entry<String, JejuPlace>>> subEntry : subRegionMap.entrySet()) {
+                placesBuilder.append("  - ").append(subEntry.getKey()).append("\n");
+                for (Map.Entry<String, JejuPlace> entry : subEntry.getValue()) {
+                    JejuPlace p = entry.getValue();
+                    placesBuilder
+                        .append("    [")
+                        .append(entry.getKey())
+                        .append("] ")
+                        .append(p.getName())
+                        .append(" (")
+                        .append(p.getCategory())
+                        .append(")\n");
+                }
             }
         }
         String placesStr = placesBuilder.toString();
@@ -153,10 +172,12 @@ public class PlanChatController {
             당신은 수천 명의 여행 일정을 설계해 온 전문 여행 플래너입니다.
 
             [대화 진행 규칙]
-            1. 다음 정보를 대화를 통해 순서대로 하나씩 파악하세요.
-               - 여행 스타일 (자연/맛집/액티비티/휴양 등)
-               - 동행자 (혼자/연인/가족/친구)
-               - 여행 기간 (몇 박 며칠)
+            1. 다음 정보를 대화를 통해 순서대로 하나씩 파악하세요. 이 3가지를 물을 때는
+               반드시 options에 선택 가능한 보기를 포함하세요 (사용자가 직접 입력할 수도
+               있으니 자유 응답도 항상 허용됩니다).
+               - 여행 스타일 (자연/맛집/액티비티/휴양 등) → options 예: ["자연", "맛집", "액티비티", "휴양"]
+               - 동행자 (혼자/연인/가족/친구) → options 예: ["혼자", "연인", "가족", "친구"]
+               - 여행 기간 (몇 박 며칠) → options 예: ["당일치기", "1박 2일", "2박 3일", "3박 4일"]
             2. 사용자가 이미 답한 정보는 절대 다시 묻지 마세요.
             3. 사용자가 말하지 않은 내용을 추측하거나 단정짓지 마세요.
             4. 사용자가 한 메시지에 여러 정보를 한꺼번에 알려주면 추가 질문 없이 바로 일정을 생성하세요.
@@ -166,10 +187,15 @@ public class PlanChatController {
             8. 첫째 날 출발 시간이나 마지막 날 비행기 시간을 사용자가 언급하면, 그 시간에 맞춰 일정을 조정하세요.
             9. 같은 날에는 반드시 같은 권역의 장소를 우선 사용하세요.
             10. 동부/서부/남부/제주시를 하루에 섞지 마세요.
-            11. 이동시간 최소화를 최우선으로 고려하세요.
-            12. 마지막 날은 공항 접근성을 고려하세요.
-            13. 첫날 도착 시간이 있다면 그 시간 이전 일정은 배치하지 마세요.
-            14. 마지막날 비행 시간이 있다면 공항 이동시간을 확보하세요.
+            11. 같은 권역 안에서도 장소 목록에 표시된 읍/면/동 하위 그룹을 최대한
+                하나로 통일해서 하루 동선이 여러 읍면동에 흩어지지 않게 하세요
+                (예: 1일차는 서귀포시 위주, 2일차는 애월읍 위주).
+            12. 이동시간 최소화를 최우선으로 고려하세요.
+            13. 마지막 날은 공항 접근성을 고려하세요.
+            14. 첫날 도착 시간이 있다면 그 시간 이전 일정은 배치하지 마세요.
+            15. 마지막날 비행 시간이 있다면 공항 이동시간을 확보하세요.
+            16. 같은 장소를 여러 날에 중복 배치하지 마세요. 이미 다른 날 일정에 넣은 장소는
+                제외하고, 항상 새로운 장소로만 채우세요.
 
             [추천 가능한 실제 제주도 장소 - 반드시 아래 id 중에서만 선택]
             %s
@@ -204,9 +230,11 @@ public class PlanChatController {
 
             규칙:
             1. 장소 개수는 그날의 활동 강도에 따라 유동적으로 정하세요.
-               - 등산(한라산 등), 장시간 액티비티가 포함된 날: 2~3곳
-               - 가벼운 관광 위주인 날: 4~5곳
-            2. 모든 날은 최소 2곳, 최대 5곳 이내로 구성하세요.
+               - 등산(한라산 등), 장시간 액티비티가 포함된 날: 3곳
+               - 가벼운 관광/휴양 위주인 날: 4~5곳
+            2. 모든 날은 최소 3곳, 최대 5곳 이내로 구성하세요. 휴식 위주 여행이라도
+               일정이 휑하게 느껴지지 않도록 카페, 산책로 등 가벼운 장소를 채워 최소
+               3곳은 유지하세요.
             3. "id"는 반드시 위 목록에 제시된 [p1], [p2]... 또는 [w1], [w2]... 중에서만 선택하세요.
             4. 목록에 없는 장소는 절대 만들어내지 마세요.
             5. 모든 텍스트는 반드시 한국어로만 작성하세요.
@@ -228,8 +256,11 @@ public class PlanChatController {
                     ObjectNode scheduleNode = (ObjectNode) root.get("schedule");
                     ArrayNode days = (ArrayNode) scheduleNode.get("days");
 
+                    String conversationContext = buildConversationText(history, message);
+
                     for (int dayIdx = 0; dayIdx < days.size(); dayIdx++) {
                         JsonNode dayNode = days.get(dayIdx);
+                        boolean isFirstDay = (dayIdx == 0);
                         boolean isLastDay = (dayIdx == days.size() - 1);
                         ArrayNode places = (ArrayNode) dayNode.get("places");
 
@@ -264,8 +295,24 @@ public class PlanChatController {
                             .collect(Collectors.toList());
 
                         // 최적 동선 정렬 및 시간 배정 적용
-                        List<ObjectNode> ordered = optimalOrder(withCoords, isLastDay);
-                        assignTimesForDay(ordered, mapper);
+                        // 매일 숙소에서 출발해서(있으면) 숙소로 돌아오는 걸 기본으로 하되,
+                        // 마지막 날만 공항에서 끝나는 걸로 앵커를 바꾼다.
+                        Double endLat;
+                        Double endLng;
+                        if (isLastDay) {
+                            endLat = AIRPORT_LAT;
+                            endLng = AIRPORT_LNG;
+                        } else {
+                            endLat = accommodationLat;
+                            endLng = accommodationLng;
+                        }
+                        List<ObjectNode> ordered = optimalOrder(
+                            withCoords, accommodationLat, accommodationLng, endLat, endLng
+                        );
+                        // 도착/출발 시간 제약은 첫/마지막 날에만 의미가 있으므로, 그 외
+                        // 날짜는 대화 전체를 프롬프트에 실어 보내지 않는다(토큰 낭비 방지).
+                        String dayConversationContext = (isFirstDay || isLastDay) ? conversationContext : "";
+                        assignTimesForDay(ordered, mapper, dayConversationContext, isFirstDay, isLastDay);
                         ordered.addAll(withoutCoords);
 
                         places.removeAll();
@@ -282,6 +329,17 @@ public class PlanChatController {
         }).start();
 
         return emitter;
+    }
+
+    private String buildConversationText(List<ChatMessageDto> history, String message) {
+        StringBuilder sb = new StringBuilder();
+        if (history != null) {
+            for (ChatMessageDto m : history) {
+                sb.append(m.role()).append(": ").append(m.content()).append("\n");
+            }
+        }
+        sb.append("user: ").append(message).append("\n");
+        return sb.toString();
     }
 
     private JsonNode parseAiJson(String raw, ObjectMapper mapper) {
@@ -304,7 +362,13 @@ public class PlanChatController {
         }
     }
 
-    private void assignTimesForDay(List<ObjectNode> orderedPlaces, ObjectMapper mapper) {
+    private void assignTimesForDay(
+        List<ObjectNode> orderedPlaces,
+        ObjectMapper mapper,
+        String conversationContext,
+        boolean isFirstDay,
+        boolean isLastDay
+    ) {
         if (orderedPlaces.isEmpty()) return;
 
         StringBuilder sb = new StringBuilder();
@@ -314,9 +378,22 @@ public class PlanChatController {
               .append(" (").append(p.get("category").asText()).append(")\n");
         }
 
+        StringBuilder dayConstraints = new StringBuilder();
+        if (isFirstDay) {
+            dayConstraints.append("- 이 날은 여행 첫째 날입니다. 대화에서 첫날 도착 시간이 언급됐다면, ")
+                .append("그 시간 이전에는 어떤 장소도 배정하지 마세요.\n");
+        }
+        if (isLastDay) {
+            dayConstraints.append("- 이 날은 여행 마지막 날입니다. 대화에서 출발(비행기) 시간이 언급됐다면, ")
+                .append("그 시간에 늦지 않도록 마지막 장소 종료 시간과 공항 이동 여유를 확보하세요.\n");
+        }
+
         String prompt = String.format("""
             다음은 하루 동안 방문할 장소들을 실제 이동 동선 순서대로 나열한 것입니다.
             각 장소마다 현실적인 방문 시작~종료 시간(HH:mm~HH:mm)을 배정해주세요.
+
+            [지금까지의 대화 - 도착/출발 시간 제약 참고용]
+            %s
 
             [방문 순서]
             %s
@@ -326,10 +403,10 @@ public class PlanChatController {
             - 식사는 아침(08:00~10:00), 점심(12:00~14:00), 저녁(18:00~20:00) 시간대를 고려하세요.
             - 관광지는 1~2시간, 카페는 1시간 내외로 배정하세요.
             - 시간이 겹치지 않고, 앞 장소 종료 후 다음 장소가 이어지도록 하세요.
-
+            %s
             반드시 아래 JSON 형식으로만 응답하세요:
             { "times": ["07:00~17:00", "17:30~18:30", "..."] }
-            """, sb.toString());
+            """, conversationContext, sb.toString(), dayConstraints.toString());
 
         try {
             String response = aiService.chatWithGemini(List.of(new ChatMessageDto("user", prompt)));
@@ -345,9 +422,13 @@ public class PlanChatController {
         }
     }
 
-    private List<ObjectNode> optimalOrder(List<ObjectNode> places, boolean endNearAirport) {
+    // startLat/startLng, endLat/endLng: 그날 동선의 시작/종료 앵커(숙소·공항 등). null이면
+    // 해당 쪽은 앵커 없이(순수 방문지 간 거리만) 최적화한다.
+    private List<ObjectNode> optimalOrder(
+        List<ObjectNode> places, Double startLat, Double startLng, Double endLat, Double endLng
+    ) {
         if (places.size() <= 1) return new ArrayList<>(places);
-        if (places.size() > 8) return nearestNeighborOrder(places);
+        if (places.size() > 8) return nearestNeighborOrder(places, startLat, startLng);
 
         List<List<ObjectNode>> permutations = new ArrayList<>();
         permute(new ArrayList<>(places), 0, permutations);
@@ -363,9 +444,13 @@ public class PlanChatController {
                     perm.get(i + 1).get("lat").asDouble(), perm.get(i + 1).get("lng").asDouble()
                 );
             }
-            if (endNearAirport) {
+            if (startLat != null && startLng != null) {
+                ObjectNode first = perm.get(0);
+                total += haversine(startLat, startLng, first.get("lat").asDouble(), first.get("lng").asDouble());
+            }
+            if (endLat != null && endLng != null) {
                 ObjectNode last = perm.get(perm.size() - 1);
-                total += haversine(last.get("lat").asDouble(), last.get("lng").asDouble(), AIRPORT_LAT, AIRPORT_LNG);
+                total += haversine(last.get("lat").asDouble(), last.get("lng").asDouble(), endLat, endLng);
             }
             if (total < bestDistance) {
                 bestDistance = total;
@@ -387,11 +472,22 @@ public class PlanChatController {
         }
     }
 
-    private List<ObjectNode> nearestNeighborOrder(List<ObjectNode> places) {
+    private List<ObjectNode> nearestNeighborOrder(List<ObjectNode> places, Double startLat, Double startLng) {
         if (places.isEmpty()) return new ArrayList<>();
         List<ObjectNode> remaining = new ArrayList<>(places);
         List<ObjectNode> result = new ArrayList<>();
-        ObjectNode current = remaining.remove(0);
+
+        ObjectNode current;
+        if (startLat != null && startLng != null) {
+            current = Collections.min(
+                remaining,
+                Comparator.comparingDouble(p ->
+                    haversine(startLat, startLng, p.get("lat").asDouble(), p.get("lng").asDouble()))
+            );
+            remaining.remove(current);
+        } else {
+            current = remaining.remove(0);
+        }
         result.add(current);
 
         while (!remaining.isEmpty()) {
