@@ -1,8 +1,6 @@
 package com.example.demo.plan;
 
 import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -38,11 +36,27 @@ public class PlanChatController {
     private final AiService aiService;
     private final WishlistRepository wishlistRepository;
     private final JejuPlaceRepository jejuPlaceRepository;
+    private final RouteOptimizer routeOptimizer;
+    private final AiResponseParser aiResponseParser;
+    private final PlaceGroupingService placeGroupingService;
+    private final VisitTimeAssigner visitTimeAssigner;
 
-    public PlanChatController(AiService aiService, WishlistRepository wishlistRepository, JejuPlaceRepository jejuPlaceRepository) {
+    public PlanChatController(
+        AiService aiService,
+        WishlistRepository wishlistRepository,
+        JejuPlaceRepository jejuPlaceRepository,
+        RouteOptimizer routeOptimizer,
+        AiResponseParser aiResponseParser,
+        PlaceGroupingService placeGroupingService,
+        VisitTimeAssigner visitTimeAssigner
+    ) {
         this.aiService = aiService;
         this.wishlistRepository = wishlistRepository;
         this.jejuPlaceRepository = jejuPlaceRepository;
+        this.routeOptimizer = routeOptimizer;
+        this.aiResponseParser = aiResponseParser;
+        this.placeGroupingService = placeGroupingService;
+        this.visitTimeAssigner = visitTimeAssigner;
     }
 
     @PostMapping(value = "/chat", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
@@ -127,45 +141,7 @@ public class PlanChatController {
             .collect(Collectors.toMap(
                 p -> "p" + pIdCounter.getAndIncrement(), p -> p, (a, b) -> a, java.util.LinkedHashMap::new));
 
-        Map<String, List<Map.Entry<String, JejuPlace>>> regionMap = placeIdMap.entrySet().stream()
-            .collect(Collectors.groupingBy(e -> e.getValue().getRegion())); // 엔티티에 추가한 region 활용
-
-        StringBuilder placesBuilder = new StringBuilder();
-        for (String region : List.of("동부", "서부", "남부", "제주시")) {
-            List<Map.Entry<String, JejuPlace>> regionPlaces = regionMap.get(region);
-            if (regionPlaces == null || regionPlaces.isEmpty()) {
-                continue;
-            }
-            placesBuilder.append("\n[").append(region).append("]\n");
-
-            // 권역 안에서 읍/면/동 단위(sub_region)로 한 번 더 묶어서 같은 날 동선이
-            // 좁은 지역에 모이도록 힌트를 준다. 아직 매핑 안 된 곳은 "기타"로.
-            Map<String, List<Map.Entry<String, JejuPlace>>> subRegionMap = regionPlaces.stream()
-                .collect(Collectors.groupingBy(
-                    e -> {
-                        String sr = e.getValue().getSubRegion();
-                        return (sr == null || sr.isBlank()) ? "기타" : sr;
-                    },
-                    java.util.LinkedHashMap::new,
-                    Collectors.toList()
-                ));
-
-            for (Map.Entry<String, List<Map.Entry<String, JejuPlace>>> subEntry : subRegionMap.entrySet()) {
-                placesBuilder.append("  - ").append(subEntry.getKey()).append("\n");
-                for (Map.Entry<String, JejuPlace> entry : subEntry.getValue()) {
-                    JejuPlace p = entry.getValue();
-                    placesBuilder
-                        .append("    [")
-                        .append(entry.getKey())
-                        .append("] ")
-                        .append(p.getName())
-                        .append(" (")
-                        .append(p.getCategory())
-                        .append(")\n");
-                }
-            }
-        }
-        String placesStr = placesBuilder.toString();
+        String placesStr = placeGroupingService.buildPlacesPrompt(placeIdMap);
 
         // 6. 시스템 프롬프트 조립
         String systemPrompt = String.format("""
@@ -249,7 +225,7 @@ public class PlanChatController {
         new Thread(() -> {
             try {
                 String response = chatWithRetry(messages);
-                JsonNode root = parseAiJson(response, mapper);
+                JsonNode root = aiResponseParser.parse(response);
                 String type = root.has("type") ? root.get("type").asText() : "";
 
                 if (type.equals("schedule") && root.has("schedule")) {
@@ -306,13 +282,13 @@ public class PlanChatController {
                             endLat = accommodationLat;
                             endLng = accommodationLng;
                         }
-                        List<ObjectNode> ordered = optimalOrder(
+                        List<ObjectNode> ordered = routeOptimizer.optimalOrder(
                             withCoords, accommodationLat, accommodationLng, endLat, endLng
                         );
                         // 도착/출발 시간 제약은 첫/마지막 날에만 의미가 있으므로, 그 외
                         // 날짜는 대화 전체를 프롬프트에 실어 보내지 않는다(토큰 낭비 방지).
                         String dayConversationContext = (isFirstDay || isLastDay) ? conversationContext : "";
-                        assignTimesForDay(ordered, mapper, dayConversationContext, isFirstDay, isLastDay);
+                        visitTimeAssigner.assignTimesForDay(ordered, dayConversationContext, isFirstDay, isLastDay);
                         ordered.addAll(withoutCoords);
 
                         places.removeAll();
@@ -340,186 +316,6 @@ public class PlanChatController {
         }
         sb.append("user: ").append(message).append("\n");
         return sb.toString();
-    }
-
-    private JsonNode parseAiJson(String raw, ObjectMapper mapper) {
-        String text = raw.trim();
-        text = text.replaceAll("```json\\s*", "").replaceAll("```", "").trim();
-
-        int start = text.indexOf('{');
-        int end = text.lastIndexOf('}');
-        if (start != -1 && end != -1 && end > start) {
-            text = text.substring(start, end + 1);
-        }
-
-        try {
-            return mapper.readTree(text);
-        } catch (Exception e) {
-            ObjectNode fallback = mapper.createObjectNode();
-            fallback.put("type", "question");
-            fallback.put("message", raw.trim());
-            return fallback;
-        }
-    }
-
-    private void assignTimesForDay(
-        List<ObjectNode> orderedPlaces,
-        ObjectMapper mapper,
-        String conversationContext,
-        boolean isFirstDay,
-        boolean isLastDay
-    ) {
-        if (orderedPlaces.isEmpty()) return;
-
-        StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < orderedPlaces.size(); i++) {
-            ObjectNode p = orderedPlaces.get(i);
-            sb.append(i + 1).append(". ").append(p.get("name").asText())
-              .append(" (").append(p.get("category").asText()).append(")\n");
-        }
-
-        StringBuilder dayConstraints = new StringBuilder();
-        if (isFirstDay) {
-            dayConstraints.append("- 이 날은 여행 첫째 날입니다. 대화에서 첫날 도착 시간이 언급됐다면, ")
-                .append("그 시간 이전에는 어떤 장소도 배정하지 마세요.\n");
-        }
-        if (isLastDay) {
-            dayConstraints.append("- 이 날은 여행 마지막 날입니다. 대화에서 출발(비행기) 시간이 언급됐다면, ")
-                .append("그 시간에 늦지 않도록 마지막 장소 종료 시간과 공항 이동 여유를 확보하세요.\n");
-        }
-
-        String prompt = String.format("""
-            다음은 하루 동안 방문할 장소들을 실제 이동 동선 순서대로 나열한 것입니다.
-            각 장소마다 현실적인 방문 시작~종료 시간(HH:mm~HH:mm)을 배정해주세요.
-
-            [지금까지의 대화 - 도착/출발 시간 제약 참고용]
-            %s
-
-            [방문 순서]
-            %s
-
-            고려사항:
-            - 등산(한라산 등)처럼 오래 걸리는 활동은 충분한 시간을 배정하세요(예: 07:00~17:00).
-            - 식사는 아침(08:00~10:00), 점심(12:00~14:00), 저녁(18:00~20:00) 시간대를 고려하세요.
-            - 관광지는 1~2시간, 카페는 1시간 내외로 배정하세요.
-            - 시간이 겹치지 않고, 앞 장소 종료 후 다음 장소가 이어지도록 하세요.
-            %s
-            반드시 아래 JSON 형식으로만 응답하세요:
-            { "times": ["07:00~17:00", "17:30~18:30", "..."] }
-            """, conversationContext, sb.toString(), dayConstraints.toString());
-
-        try {
-            String response = aiService.chatWithGemini(List.of(new ChatMessageDto("user", prompt)));
-            JsonNode root = parseAiJson(response, mapper);
-            if (root.has("times")) {
-                ArrayNode times = (ArrayNode) root.get("times");
-                for (int i = 0; i < orderedPlaces.size() && i < times.size(); i++) {
-                    orderedPlaces.get(i).put("recommendedTime", times.get(i).asText());
-                }
-            }
-        } catch (Exception e) {
-            System.out.println("시간 재배정 실패: " + e.getMessage());
-        }
-    }
-
-    // startLat/startLng, endLat/endLng: 그날 동선의 시작/종료 앵커(숙소·공항 등). null이면
-    // 해당 쪽은 앵커 없이(순수 방문지 간 거리만) 최적화한다.
-    private List<ObjectNode> optimalOrder(
-        List<ObjectNode> places, Double startLat, Double startLng, Double endLat, Double endLng
-    ) {
-        if (places.size() <= 1) return new ArrayList<>(places);
-        if (places.size() > 8) return nearestNeighborOrder(places, startLat, startLng);
-
-        List<List<ObjectNode>> permutations = new ArrayList<>();
-        permute(new ArrayList<>(places), 0, permutations);
-
-        List<ObjectNode> best = null;
-        double bestDistance = Double.MAX_VALUE;
-
-        for (List<ObjectNode> perm : permutations) {
-            double total = 0;
-            for (int i = 0; i < perm.size() - 1; i++) {
-                total += haversine(
-                    perm.get(i).get("lat").asDouble(), perm.get(i).get("lng").asDouble(),
-                    perm.get(i + 1).get("lat").asDouble(), perm.get(i + 1).get("lng").asDouble()
-                );
-            }
-            if (startLat != null && startLng != null) {
-                ObjectNode first = perm.get(0);
-                total += haversine(startLat, startLng, first.get("lat").asDouble(), first.get("lng").asDouble());
-            }
-            if (endLat != null && endLng != null) {
-                ObjectNode last = perm.get(perm.size() - 1);
-                total += haversine(last.get("lat").asDouble(), last.get("lng").asDouble(), endLat, endLng);
-            }
-            if (total < bestDistance) {
-                bestDistance = total;
-                best = perm;
-            }
-        }
-        return best;
-    }
-
-    private void permute(List<ObjectNode> list, int k, List<List<ObjectNode>> result) {
-        if (k == list.size()) {
-            result.add(new ArrayList<>(list));
-            return;
-        }
-        for (int i = k; i < list.size(); i++) {
-            Collections.swap(list, k, i);
-            permute(list, k + 1, result);
-            Collections.swap(list, k, i);
-        }
-    }
-
-    private List<ObjectNode> nearestNeighborOrder(List<ObjectNode> places, Double startLat, Double startLng) {
-        if (places.isEmpty()) return new ArrayList<>();
-        List<ObjectNode> remaining = new ArrayList<>(places);
-        List<ObjectNode> result = new ArrayList<>();
-
-        ObjectNode current;
-        if (startLat != null && startLng != null) {
-            current = Collections.min(
-                remaining,
-                Comparator.comparingDouble(p ->
-                    haversine(startLat, startLng, p.get("lat").asDouble(), p.get("lng").asDouble()))
-            );
-            remaining.remove(current);
-        } else {
-            current = remaining.remove(0);
-        }
-        result.add(current);
-
-        while (!remaining.isEmpty()) {
-            ObjectNode nearest = null;
-            double minDist = Double.MAX_VALUE;
-            double curLat = current.get("lat").asDouble();
-            double curLng = current.get("lng").asDouble();
-
-            for (ObjectNode candidate : remaining) {
-                double dist = haversine(curLat, curLng,
-                    candidate.get("lat").asDouble(), candidate.get("lng").asDouble());
-                if (dist < minDist) {
-                    minDist = dist;
-                    nearest = candidate;
-                }
-            }
-            result.add(nearest);
-            remaining.remove(nearest);
-            current = nearest;
-        }
-        return result;
-    }
-
-    private double haversine(double lat1, double lng1, double lat2, double lng2) {
-        double R = 6371000;
-        double dLat = Math.toRadians(lat2 - lat1);
-        double dLng = Math.toRadians(lng2 - lng1);
-        double a = Math.sin(dLat / 2) * Math.sin(dLat / 2)
-            + Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2))
-            * Math.sin(dLng / 2) * Math.sin(dLng / 2);
-        double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-        return R * c;
     }
 
     private String chatWithRetry(List<ChatMessageDto> messages) throws Exception {
