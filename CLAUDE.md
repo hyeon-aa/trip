@@ -23,7 +23,8 @@ feature-level requirements and the "why" behind them, not just architecture),
 `docs/PLACE_SEARCH.md` (Korean — how the embedding search + region/sub_region
 grouping pipeline works, step by step), `docs/WORKFLOW.md` (Korean — the
 issue → branch → PRD → implement → PR/review → merge flow, backed by the
-`/issue`, `/commit`, and `/pr` skills).
+`/issue`, `/commit`, and `/pr` skills), `docs/REDIS.md` (Korean — Redis
+concepts plus this project's current/planned Redis usage).
 
 ## Commands
 
