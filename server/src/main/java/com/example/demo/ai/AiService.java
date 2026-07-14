@@ -3,6 +3,7 @@ package com.example.demo.ai;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 
@@ -49,7 +50,7 @@ public class AiService {
 
     public String createEmbedding(String text) {
         String key = cacheKey(text);
-        String cached = redisService.get(key);
+        String cached = getCached(key);
         if (cached != null) {
             System.out.println("[embedding cache] hit: " + key);
             return cached;
@@ -72,7 +73,7 @@ public class AiService {
             .body(GeminiEmbeddingResponse.class);
 
         String result = response.embedding.values.toString();
-        redisService.save(key, result);
+        saveCache(key, result);
         return result;
     }
 
@@ -82,13 +83,28 @@ public class AiService {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
             byte[] hash = digest.digest(text.getBytes(StandardCharsets.UTF_8));
-            StringBuilder hex = new StringBuilder();
-            for (byte b : hash) {
-                hex.append(String.format("%02x", b));
-            }
-            return "embedding:" + hex;
+            return "embedding:" + HexFormat.of().formatHex(hash);
         } catch (NoSuchAlgorithmException e) {
             throw new IllegalStateException(e);
+        }
+    }
+
+    // Redis 장애 시에도 임베딩 자체는 계속 동작해야 하므로, 캐시 조회/저장
+    // 실패는 캐시를 건너뛰는 것으로 처리하고 상위로 예외를 전파하지 않는다.
+    String getCached(String key) {
+        try {
+            return redisService.get(key);
+        } catch (Exception e) {
+            System.out.println("[embedding cache] Redis 조회 실패, 캐시 건너뜀: " + e.getMessage());
+            return null;
+        }
+    }
+
+    void saveCache(String key, String value) {
+        try {
+            redisService.save(key, value);
+        } catch (Exception e) {
+            System.out.println("[embedding cache] Redis 저장 실패, 무시: " + e.getMessage());
         }
     }
 

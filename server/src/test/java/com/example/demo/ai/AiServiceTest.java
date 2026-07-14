@@ -1,7 +1,9 @@
 package com.example.demo.ai;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -40,5 +42,21 @@ class AiServiceTest {
 
         assertThat(result).isEqualTo("[0.1, 0.2, 0.3]");
         verify(redisService, never()).save(anyString(), anyString());
+    }
+
+    @Test
+    void Redis_조회가_실패해도_예외를_던지지_않고_null을_반환한다() {
+        when(redisService.get(anyString())).thenThrow(new RuntimeException("연결 실패"));
+
+        String result = aiService.getCached("아무 키");
+
+        assertThat(result).isNull();
+    }
+
+    @Test
+    void Redis_저장이_실패해도_예외를_던지지_않는다() {
+        doThrow(new RuntimeException("연결 실패")).when(redisService).save(anyString(), anyString());
+
+        assertThatCode(() -> aiService.saveCache("아무 키", "아무 값")).doesNotThrowAnyException();
     }
 }
