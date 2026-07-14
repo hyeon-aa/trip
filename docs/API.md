@@ -71,8 +71,8 @@ subRegion, address, lat, lng, description, embedding(text, pgvector 캐스팅용
 
 `Wishlist` (`wishlist` 테이블): `id, name, lat, lng, category, kakaoPlaceId, address`.
 
-## 현재 미사용
+## Redis 캐싱
 
-`RedisService` (`save`/`get`, TTL 1시간)는 정의만 되어 있고 코드베이스 어디에서도
-호출되지 않는다. 캐싱/세션 등 어떤 플로우에도 아직 연결되어 있지 않음 — 죽은
-코드는 아니지만(빈 스캐폴딩) 실제로 동작 중인 캐시가 있다고 오해하지 말 것.
+`AiService.createEmbedding`이 `RedisService` 기반 cache-aside 캐싱을 쓴다 —
+같은 텍스트로 다시 임베딩 요청이 오면 Gemini API 호출 없이 캐시된 벡터를
+그대로 반환한다. 자세한 키/TTL 설계는 `docs/REDIS.md` 참고.
