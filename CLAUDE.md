@@ -70,8 +70,8 @@ below — via a place search, not free text).
    one small area; wishlist places are listed too. Rules cover output format, minimum
    3 places/day, no reusing a place across days, and honoring arrival/departure time
    mentions.
-6. Parses the model's JSON response (`parseAiJson` strips markdown fences and
-   extracts the outermost `{...}`). For `type: schedule` responses, resolves each
+6. Parses the model's JSON response (`AiResponseParser.parse` strips markdown fences
+   and extracts the outermost `{...}`). For `type: schedule` responses, resolves each
    place id back to real name/category/lat/lng from the id maps built in steps 1/4.
 7. Per day, places with coordinates are reordered for shortest travel distance
    (`optimalOrder`: brute-force permutations for ≤8 stops, else nearest-neighbor).
