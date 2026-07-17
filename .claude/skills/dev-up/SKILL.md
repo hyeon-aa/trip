@@ -58,13 +58,15 @@ docker run -d --name trip-redis \
   redis:7-alpine
 ```
 
-## 4. Postgres 준비 확인 + pgvector 확장 보장
+## 4. Postgres 준비 확인
 
 ```bash
 docker exec <postgres-container> pg_isready -U <username>
-docker exec <postgres-container> psql -U <username> -d <db명> -c "CREATE EXTENSION IF NOT EXISTS vector;"
 ```
-`pg_isready`가 성공할 때까지 몇 초 간격으로 재시도(최대 ~30초).
+`pg_isready`가 성공할 때까지 몇 초 간격으로 재시도(최대 ~30초). pgvector
+확장 생성(`CREATE EXTENSION IF NOT EXISTS vector`)은 더 이상 여기서 수동으로
+하지 않는다 — Flyway 도입(이슈 #29) 이후 서버 기동 시 첫 마이그레이션
+(`V1__baseline.sql`)이 자동으로 보장한다.
 
 ## 5. Redis 준비 확인
 
