@@ -72,6 +72,169 @@ function formatTimeLabel(time: string): string {
   return minute === 0 ? `${period} ${hour12}시` : `${period} ${hour12}시 ${minute}분`;
 }
 
+// 온보딩 진행 중에만 쓰이는 카드 — PlanChat 내부 구현 디테일이라 별도 파일로
+// 빼지 않고 여기 둔다. 상태/서버 호출 로직은 전부 PlanChat이 들고 있고, 이
+// 컴포넌트는 그걸 그대로 보여주기만 하는 순수 표현 컴포넌트다.
+function OnboardingStepCard({
+  question,
+  stepIndex,
+  totalSteps,
+  selectedOptions,
+  pickedTime,
+  lodgingQuery,
+  lodgingResults,
+  onToggleMultiSelect,
+  onSubmitMultiSelect,
+  onSelectOption,
+  onPickTime,
+  onSubmitTime,
+  onLodgingQueryChange,
+  onSelectLodging,
+  onSkipLodging,
+  onPrevious,
+}: {
+  question: ChatMessage;
+  stepIndex: number;
+  totalSteps: number;
+  selectedOptions: string[];
+  pickedTime: string;
+  lodgingQuery: string;
+  lodgingResults: KakaoPlace[];
+  onToggleMultiSelect: (opt: string) => void;
+  onSubmitMultiSelect: () => void;
+  onSelectOption: (opt: string) => void;
+  onPickTime: (time: string) => void;
+  onSubmitTime: () => void;
+  onLodgingQueryChange: (value: string) => void;
+  onSelectLodging: (place: KakaoPlace) => void;
+  onSkipLodging: () => void;
+  onPrevious: () => void;
+}) {
+  return (
+    <div className="p-4">
+      <div className="flex items-center gap-2 mb-3">
+        {stepIndex > 0 && (
+          <button
+            onClick={onPrevious}
+            className="text-xs text-sky-500 hover:text-sky-700 transition-colors flex-shrink-0"
+          >
+            ← 이전
+          </button>
+        )}
+        <div className="flex-1 h-1.5 bg-sky-50 rounded-full overflow-hidden">
+          <div
+            className="h-full bg-sky-400 rounded-full transition-all"
+            style={{ width: `${((stepIndex + 1) / totalSteps) * 100}%` }}
+          />
+        </div>
+        <span className="text-xs text-stone-400 flex-shrink-0">
+          {stepIndex + 1}/{totalSteps}
+        </span>
+      </div>
+
+      <div className="bg-sky-50 text-stone-700 rounded-2xl rounded-bl-sm px-3 py-2 text-sm max-w-[90%]">
+        {question.content}
+      </div>
+
+      {question.placeSearch && (
+        <div className="mt-2 ml-1 w-full max-w-[90%] relative">
+          <div className="flex gap-2">
+            <input
+              value={lodgingQuery}
+              onChange={(e) => onLodgingQueryChange(e.target.value)}
+              placeholder="숙소 이름으로 검색..."
+              className="flex-1 border border-sky-200 px-3 py-2 rounded-xl text-sm"
+            />
+            <button
+              onClick={onSkipLodging}
+              className="text-xs bg-white border border-sky-300 text-sky-600 px-3 py-1.5 rounded-full hover:bg-sky-100 transition-colors flex-shrink-0"
+            >
+              건너뛰기
+            </button>
+          </div>
+          {lodgingResults.length > 0 && (
+            <div className="absolute left-0 right-0 bg-white border border-sky-100 rounded-xl shadow-lg z-50 max-h-64 overflow-y-auto mt-1">
+              {lodgingResults.map((place) => (
+                <div
+                  key={place.id}
+                  className="px-4 py-3 border-b border-sky-50 hover:bg-sky-50 cursor-pointer last:border-0"
+                  onClick={() => onSelectLodging(place)}
+                >
+                  <p className="font-medium text-sm text-stone-700">
+                    {place.place_name}
+                  </p>
+                  <p className="text-xs text-stone-400 mt-0.5">
+                    {place.address_name}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {question.options && question.options.length > 0 && !question.placeSearch && (
+        question.multiSelect ? (
+          <div className="flex flex-wrap gap-2 mt-2 ml-1 items-center">
+            {question.options.map((opt) => {
+              const isSelected = selectedOptions.includes(opt);
+              return (
+                <button
+                  key={opt}
+                  onClick={() => onToggleMultiSelect(opt)}
+                  className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${
+                    isSelected
+                      ? "bg-sky-400 border-sky-400 text-white"
+                      : "bg-white border-sky-300 text-sky-600 hover:bg-sky-100"
+                  }`}
+                >
+                  {opt}
+                </button>
+              );
+            })}
+            <button
+              onClick={onSubmitMultiSelect}
+              disabled={selectedOptions.length === 0}
+              className="text-xs bg-sky-600 text-white px-3 py-1.5 rounded-full hover:bg-sky-700 transition-colors disabled:opacity-40"
+            >
+              선택 완료
+            </button>
+          </div>
+        ) : (
+          <div className="flex flex-wrap gap-2 mt-2 ml-1 items-center">
+            {question.options.map((opt) => (
+              <button
+                key={opt}
+                onClick={() => onSelectOption(opt)}
+                className="text-xs bg-white border border-sky-300 text-sky-600 px-3 py-1.5 rounded-full hover:bg-sky-100 transition-colors"
+              >
+                {opt}
+              </button>
+            ))}
+            {question.timePicker && (
+              <div className="flex items-center gap-1.5">
+                <input
+                  type="time"
+                  value={pickedTime}
+                  onChange={(e) => onPickTime(e.target.value)}
+                  className="text-xs border border-sky-200 rounded-lg px-2 py-1.5"
+                />
+                <button
+                  onClick={onSubmitTime}
+                  disabled={!pickedTime}
+                  className="text-xs bg-sky-600 text-white px-3 py-1.5 rounded-full hover:bg-sky-700 transition-colors disabled:opacity-40"
+                >
+                  이 시간으로
+                </button>
+              </div>
+            )}
+          </div>
+        )
+      )}
+    </div>
+  );
+}
+
 export default function PlanChat({ onScheduleUpdate }: Props) {
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
@@ -92,7 +255,12 @@ export default function PlanChat({ onScheduleUpdate }: Props) {
   const [pickedTime, setPickedTime] = useState("");
   const [lodgingQuery, setLodgingQuery] = useState("");
   const [lodgingResults, setLodgingResults] = useState<KakaoPlace[]>([]);
+  const [stepAnswers, setStepAnswers] = useState<
+    Record<number, { selectedOptions: string[]; pickedTime: string }>
+  >({});
   const accommodationRef = useRef<Accommodation | undefined>(undefined);
+
+  const isOnboarding = onboardingStep < ONBOARDING_QUESTIONS.length;
 
   useEffect(() => {
     if (lodgingQuery.length < 2) return;
@@ -112,6 +280,11 @@ export default function PlanChat({ onScheduleUpdate }: Props) {
 
     // 아직 온보딩 질문이 남았으면 서버 호출 없이 다음 질문만 로컬에서 이어간다.
     if (onboardingStep < ONBOARDING_QUESTIONS.length - 1) {
+      setStepAnswers((prev) => ({
+        ...prev,
+        [onboardingStep]: { selectedOptions, pickedTime },
+      }));
+
       const next = ONBOARDING_QUESTIONS[onboardingStep + 1];
       setMessages((prev) => [
         ...prev,
@@ -187,6 +360,23 @@ export default function PlanChat({ onScheduleUpdate }: Props) {
     }
   };
 
+  const goToPreviousStep = () => {
+    if (onboardingStep === 0) return;
+    const prevStep = onboardingStep - 1;
+    // messages는 [Q0, A0, Q1, A1, ..., A(k-1), Qk] 형태로 단계마다 2개씩
+    // 늘어나므로, 뒤에서 2개(방금 단계의 질문+답변)만 잘라내면 이전 단계로
+    // 정확히 돌아간다.
+    setMessages((prev) => prev.slice(0, -2));
+    setOnboardingStep(prevStep);
+    const saved = stepAnswers[prevStep];
+    setSelectedOptions(saved?.selectedOptions ?? []);
+    setPickedTime(saved?.pickedTime ?? "");
+    setLodgingQuery("");
+    setLodgingResults([]);
+  };
+
+  const currentQuestion = messages[messages.length - 1];
+
   return (
     <div className="flex flex-col h-full">
       <div className="p-4 border-b border-sky-100">
@@ -198,151 +388,91 @@ export default function PlanChat({ onScheduleUpdate }: Props) {
         </p>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-3">
-        {messages.map((msg, idx) => (
-          <div
-            key={idx}
-            className={`flex flex-col ${
-              msg.role === "user" ? "items-end" : "items-start"
-            }`}
-          >
-            <div
-              className={`max-w-[90%] px-3 py-2 rounded-2xl text-sm ${
-                msg.role === "user"
-                  ? "bg-sky-400 text-white rounded-br-sm"
-                  : "bg-sky-50 text-stone-700 rounded-bl-sm"
-              }`}
-            >
-              {msg.content}
-            </div>
-
-            {msg.placeSearch && idx === messages.length - 1 && (
-              <div className="mt-2 ml-1 w-full max-w-[90%] relative">
-                <div className="flex gap-2">
-                  <input
-                    value={lodgingQuery}
-                    onChange={(e) => {
-                      const value = e.target.value;
-                      setLodgingQuery(value);
-                      if (value.length < 2) setLodgingResults([]);
-                    }}
-                    placeholder="숙소 이름으로 검색..."
-                    className="flex-1 border border-sky-200 px-3 py-2 rounded-xl text-sm"
-                  />
-                  <button
-                    onClick={() => sendMessage("숙소 없음, 건너뛰기")}
-                    className="text-xs bg-white border border-sky-300 text-sky-600 px-3 py-1.5 rounded-full hover:bg-sky-100 transition-colors flex-shrink-0"
-                  >
-                    건너뛰기
-                  </button>
+      <div className="flex-1 overflow-y-auto space-y-3">
+        {isOnboarding ? (
+          <OnboardingStepCard
+            question={currentQuestion}
+            stepIndex={onboardingStep}
+            totalSteps={ONBOARDING_QUESTIONS.length}
+            selectedOptions={selectedOptions}
+            pickedTime={pickedTime}
+            lodgingQuery={lodgingQuery}
+            lodgingResults={lodgingResults}
+            onToggleMultiSelect={(opt) =>
+              setSelectedOptions((prev) =>
+                prev.includes(opt)
+                  ? prev.filter((o) => o !== opt)
+                  : [...prev, opt]
+              )
+            }
+            onSubmitMultiSelect={() => sendMessage(selectedOptions.join(", "))}
+            onSelectOption={(opt) => sendMessage(opt)}
+            onPickTime={(time) => setPickedTime(time)}
+            onSubmitTime={() => {
+              if (!pickedTime) return;
+              sendMessage(formatTimeLabel(pickedTime));
+              setPickedTime("");
+            }}
+            onLodgingQueryChange={(value) => {
+              setLodgingQuery(value);
+              if (value.length < 2) setLodgingResults([]);
+            }}
+            onSelectLodging={(place) => {
+              accommodationRef.current = {
+                lat: place.lat,
+                lng: place.lng,
+                name: place.place_name,
+              };
+              setLodgingResults([]);
+              sendMessage(place.place_name);
+            }}
+            onSkipLodging={() => sendMessage("숙소 없음, 건너뛰기")}
+            onPrevious={goToPreviousStep}
+          />
+        ) : (
+          <div className="p-4 space-y-3">
+            {messages.map((msg, idx) => (
+              <div
+                key={idx}
+                className={`flex flex-col ${
+                  msg.role === "user" ? "items-end" : "items-start"
+                }`}
+              >
+                <div
+                  className={`max-w-[90%] px-3 py-2 rounded-2xl text-sm ${
+                    msg.role === "user"
+                      ? "bg-sky-400 text-white rounded-br-sm"
+                      : "bg-sky-50 text-stone-700 rounded-bl-sm"
+                  }`}
+                >
+                  {msg.content}
                 </div>
-                {lodgingResults.length > 0 && (
-                  <div className="absolute left-0 right-0 bg-white border border-sky-100 rounded-xl shadow-lg z-50 max-h-64 overflow-y-auto mt-1">
-                    {lodgingResults.map((place) => (
-                      <div
-                        key={place.id}
-                        className="px-4 py-3 border-b border-sky-50 hover:bg-sky-50 cursor-pointer last:border-0"
-                        onClick={() => {
-                          accommodationRef.current = {
-                            lat: place.lat,
-                            lng: place.lng,
-                            name: place.place_name,
-                          };
-                          setLodgingResults([]);
-                          sendMessage(place.place_name);
-                        }}
-                      >
-                        <p className="font-medium text-sm text-stone-700">
-                          {place.place_name}
-                        </p>
-                        <p className="text-xs text-stone-400 mt-0.5">
-                          {place.address_name}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
 
-            {msg.options &&
-              msg.options.length > 0 &&
-              !msg.placeSearch &&
-              idx === messages.length - 1 &&
-              (msg.multiSelect ? (
-                <div className="flex flex-wrap gap-2 mt-2 ml-1 items-center">
-                  {msg.options.map((opt) => {
-                    const isSelected = selectedOptions.includes(opt);
-                    return (
-                      <button
-                        key={opt}
-                        onClick={() =>
-                          setSelectedOptions((prev) =>
-                            isSelected
-                              ? prev.filter((o) => o !== opt)
-                              : [...prev, opt]
-                          )
-                        }
-                        className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${
-                          isSelected
-                            ? "bg-sky-400 border-sky-400 text-white"
-                            : "bg-white border-sky-300 text-sky-600 hover:bg-sky-100"
-                        }`}
-                      >
-                        {opt}
-                      </button>
-                    );
-                  })}
-                  <button
-                    onClick={() => sendMessage(selectedOptions.join(", "))}
-                    disabled={selectedOptions.length === 0}
-                    className="text-xs bg-sky-600 text-white px-3 py-1.5 rounded-full hover:bg-sky-700 transition-colors disabled:opacity-40"
-                  >
-                    선택 완료
-                  </button>
-                </div>
-              ) : (
-                <div className="flex flex-wrap gap-2 mt-2 ml-1 items-center">
-                  {msg.options.map((opt) => (
-                    <button
-                      key={opt}
-                      onClick={() => sendMessage(opt)}
-                      className="text-xs bg-white border border-sky-300 text-sky-600 px-3 py-1.5 rounded-full hover:bg-sky-100 transition-colors"
-                    >
-                      {opt}
-                    </button>
-                  ))}
-                  {msg.timePicker && (
-                    <div className="flex items-center gap-1.5">
-                      <input
-                        type="time"
-                        value={pickedTime}
-                        onChange={(e) => setPickedTime(e.target.value)}
-                        className="text-xs border border-sky-200 rounded-lg px-2 py-1.5"
-                      />
-                      <button
-                        onClick={() => {
-                          if (!pickedTime) return;
-                          sendMessage(formatTimeLabel(pickedTime));
-                          setPickedTime("");
-                        }}
-                        disabled={!pickedTime}
-                        className="text-xs bg-sky-600 text-white px-3 py-1.5 rounded-full hover:bg-sky-700 transition-colors disabled:opacity-40"
-                      >
-                        이 시간으로
-                      </button>
+                {msg.options &&
+                  msg.options.length > 0 &&
+                  idx === messages.length - 1 && (
+                    <div className="flex flex-wrap gap-2 mt-2 ml-1 items-center">
+                      {msg.options.map((opt) => (
+                        <button
+                          key={opt}
+                          onClick={() => sendMessage(opt)}
+                          className="text-xs bg-white border border-sky-300 text-sky-600 px-3 py-1.5 rounded-full hover:bg-sky-100 transition-colors"
+                        >
+                          {opt}
+                        </button>
+                      ))}
                     </div>
                   )}
-                </div>
-              ))}
-          </div>
-        ))}
+              </div>
+            ))}
 
-        {isLoading && (
-          <div className="flex justify-start">
-            <div className="bg-sky-50 px-4 py-2 rounded-2xl text-sm text-stone-400">
-              생각 중...
-            </div>
+            {isLoading && (
+              <div className="flex justify-start">
+                <div className="bg-sky-50 px-4 py-2 rounded-2xl text-sm text-stone-400">
+                  생각 중...
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
