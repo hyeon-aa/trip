@@ -238,6 +238,12 @@ public class PlanChatController {
 
                     String conversationContext = buildConversationText(history, message);
 
+                    // 응답이 끝까지 성공했을 때만 이벤트를 발행하기 위해 모아뒀다가
+                    // 마지막에 한꺼번에 발행한다 (뒤 날짜 처리 중 예외가 나서 전체
+                    // 요청이 실패하면, 앞서 처리된 날짜의 장소도 "일정에 포함됨"으로
+                    // 잘못 발행되면 안 되므로).
+                    List<PlaceIncludedInScheduleEvent> scheduleEvents = new ArrayList<>();
+
                     for (int dayIdx = 0; dayIdx < days.size(); dayIdx++) {
                         JsonNode dayNode = days.get(dayIdx);
                         boolean isFirstDay = (dayIdx == 0);
@@ -255,7 +261,7 @@ public class PlanChatController {
                                 placeObj.put("category", p.getCategory());
                                 placeObj.put("lat", p.getLat());
                                 placeObj.put("lng", p.getLng());
-                                eventPublisher.publishEvent(
+                                scheduleEvents.add(
                                     new PlaceIncludedInScheduleEvent("jeju_place", p.getId(), p.getName())
                                 );
                             } else if (wishlistIdMap.containsKey(id)) {
@@ -264,7 +270,7 @@ public class PlanChatController {
                                 placeObj.put("category", w.getCategory());
                                 placeObj.put("lat", w.getLat());
                                 placeObj.put("lng", w.getLng());
-                                eventPublisher.publishEvent(
+                                scheduleEvents.add(
                                     new PlaceIncludedInScheduleEvent("wishlist", w.getId(), w.getName())
                                 );
                             }
@@ -304,6 +310,10 @@ public class PlanChatController {
                         places.removeAll();
                         for (ObjectNode o : ordered) places.add(o);
                     }
+
+                    // 모든 날짜가 예외 없이 다 처리된 뒤에만(=응답이 성공적으로
+                    // 만들어진 뒤에만) 이벤트를 발행한다.
+                    scheduleEvents.forEach(eventPublisher::publishEvent);
                 }
 
                 String finalResponse = mapper.writeValueAsString(root);

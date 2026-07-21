@@ -51,11 +51,19 @@
 |---|---|---|
 | `WishlistAddedEvent` | `WishlistService.add()` | `wishlistId`, `name` |
 | `WishlistRemovedEvent` | `WishlistService.delete()` | `wishlistId` |
-| `PlaceIncludedInScheduleEvent` | `PlanChatController` (AI가 짠 일정의 place id를 실제 엔티티로 resolve하는 지점) | `source`(`"jeju_place"` 또는 `"wishlist"` — 두 테이블 id 공간이 달라서 구분 필요), `placeId`(실제 DB id, AI 프롬프트의 `p38` 같은 임시 id 아님), `placeName` |
+| `PlaceIncludedInScheduleEvent` | `PlanChatController` (일정 전체가 예외 없이 다 만들어진 뒤, 응답을 보내기 직전) | `source`(`"jeju_place"` 또는 `"wishlist"` — 두 테이블 id 공간이 달라서 구분 필요), `placeId`(실제 DB id, AI 프롬프트의 `p38` 같은 임시 id 아님), `placeName` |
 
 `event/EventLoggingListener.java`가 세 이벤트 전부 `System.out.println`으로
 로그만 남긴다 — **DB나 다른 저장소에 저장하지 않는다.** 서버를 재시작하면
 이 로그도 사라진다.
+
+**`PlaceIncludedInScheduleEvent`는 장소 id를 실제 엔티티로 바꾸는 시점이
+아니라, 그 날짜의 모든 처리(동선 최적화, 시간 배정 등)가 예외 없이 끝난
+뒤에 한꺼번에 발행한다.** 만약 뒤쪽 날짜 처리 중 예외가 나서 전체 응답이
+실패하면, 앞서 처리된 날짜의 장소들도 이벤트가 발행되면 안 되기 때문이다
+— 사용자가 결국 에러만 받았는데 "일정에 포함됨"으로 잘못 집계되는 걸
+막기 위함. 그래서 place-resolve 루프에서는 이벤트를 바로 발행하지 않고
+리스트에 모아뒀다가, 모든 날짜가 성공적으로 처리된 뒤 한 번에 발행한다.
 
 ## 왜 지금은 로그만 남기나 — 앞으로의 계획
 
