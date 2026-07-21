@@ -24,7 +24,9 @@ feature-level requirements and the "why" behind them, not just architecture),
 grouping pipeline works, step by step), `docs/WORKFLOW.md` (Korean — the
 issue → branch → PRD → implement → PR/review → merge flow, backed by the
 `/issue`, `/commit`, and `/pr` skills), `docs/REDIS.md` (Korean — Redis
-concepts plus this project's current/planned Redis usage).
+concepts plus this project's current/planned Redis usage), `docs/EVENTS.md`
+(Korean — Spring application event concepts, the sync/async distinction, and
+this project's current domain events).
 
 ## Commands
 
