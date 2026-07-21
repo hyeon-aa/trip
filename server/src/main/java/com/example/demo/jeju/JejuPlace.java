@@ -40,6 +40,6 @@ public class JejuPlace {
     @Column(columnDefinition = "text")
     private String description;
 
-    @Column(columnDefinition = "text")
+    @Column(columnDefinition = "vector(3072)")
     private String embedding;
 }

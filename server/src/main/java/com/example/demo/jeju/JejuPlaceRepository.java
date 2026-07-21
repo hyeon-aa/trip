@@ -16,7 +16,7 @@ public interface JejuPlaceRepository extends JpaRepository<JejuPlace, Long> {
         FROM jeju_place
         WHERE (:region IS NULL OR region = :region)
           AND (:mainCategory IS NULL OR main_category = :mainCategory)
-        ORDER BY embedding::vector <=> CAST(:embedding AS vector)
+        ORDER BY embedding <=> CAST(:embedding AS vector)
         LIMIT :limit
         """, nativeQuery = true)
     List<JejuPlace> findSimilarPlacesWithFilter(

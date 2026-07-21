@@ -67,7 +67,8 @@ lat < 33.3          → 남부
 ## 데이터 모델
 
 `JejuPlace` (`jeju_place` 테이블): `id, name, category, mainCategory, region,
-subRegion, address, lat, lng, description, embedding(text, pgvector 캐스팅용)`.
+subRegion, address, lat, lng, description, embedding(vector(3072), pgvector
+네이티브 타입 — `docs/PLACE_SEARCH.md` 5번 참고)`.
 
 `Wishlist` (`wishlist` 테이블): `id, name, lat, lng, category, kakaoPlaceId, address`.
 
