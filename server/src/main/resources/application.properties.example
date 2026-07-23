@@ -24,8 +24,9 @@ visitjeju.api.key=<YOUR_VISITJEJU_API_KEY>
 gemini.api.key=<YOUR_GEMINI_API_KEY>
 spring.ai.google.genai.api-key=${gemini.api.key}
 spring.ai.google.genai.chat.model=gemini-2.5-flash
-
-spring.ai.retry.max-attempts=3
+# spring.ai.retry.*는 여기 안 둔다 — google-genai 스타터가 에러를 평범한
+# RuntimeException으로 감싸버려서 Spring AI의 RetryTemplate이 재시도 대상으로
+# 인식하지 못한다. 재시도는 AiService.chatWithGemini에서 직접 처리한다.
 
 groq.api.key=<YOUR_GROQ_API_KEY>
 

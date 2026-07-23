@@ -224,20 +224,39 @@ public String chatWithGemini(List<ChatMessageDto> messages) {
 대신해줘서 필요 없어져 삭제했다. `createEmbedding`은 이번 범위 밖이라 여전히
 `GeminiEmbeddingResponse` + raw REST를 그대로 쓴다.
 
-### 재시도가 어떻게 바뀌었나
+### 재시도가 어떻게 바뀌었나 (+ PR 리뷰에서 발견된 버그와 수정)
 
 기존엔 `PlanChatController.chatWithRetry`가 503이 나면 3번까지, 2초씩 고정으로
-기다렸다가 재시도하는 코드를 손으로 짜뒀다. `ChatClient`로 옮긴 뒤에는 이
-코드가 삭제됐고, 대신 Spring AI 내부의 `RetryTemplate`이 자동으로 재시도한다
-(503뿐 아니라 429, 타임아웃 등 더 넓은 범위의 일시적 오류까지 커버).
-`application.properties`에 `spring.ai.retry.max-attempts=3`을 명시해서 기존과
-비슷한 재시도 횟수 상한을 유지했다 — Spring AI 기본값(`10`회, 지수 백오프)을
-그대로 두면 `/plan/chat`의 SSE 타임아웃보다 재시도가 더 오래 걸릴 수 있어서다.
+기다렸다가 재시도하는 코드를 손으로 짜뒀다. `ChatClient`로 옮기면서 처음엔 이
+코드를 지우고 "Spring AI 내부의 `RetryTemplate`이 대신 자동으로 재시도해줄
+것"이라고 생각해 `spring.ai.retry.max-attempts=3`만 설정해뒀는데, **이건
+틀렸다** — PR #43 리뷰에서(`/code-review`, 8개 에이전트 중 2개가 독립적으로
+실제 jar를 디컴파일해서) 확인된 사실:
+
+`spring-ai-starter-model-google-genai`의 `GoogleGenAiChatModel`은 Gemini
+쪽에서 나는 에러(예: `com.google.genai.errors.ServerException`, 503)를 전부
+평범한 `new RuntimeException("Failed to generate content", cause)`로 감싸서
+던진다. 근데 Spring AI의 `RetryTemplate`은 `TransientAiException`/
+`ResourceAccessException` 타입만 재시도 대상으로 보는 화이트리스트 방식이라,
+이 평범한 `RuntimeException`은 재시도 조건에 아예 안 걸린다. 즉
+`spring.ai.retry.max-attempts=3`을 설정해도 **실제로는 재시도가 0번 일어난다**
+— 기존에 있던 "503 나면 3번 재시도"가 "503 나면 즉시 실패"로 오히려 나빠진
+것.
+
+**수정**: `spring.ai.retry.max-attempts` 설정은 제거하고(이 provider에는 의미
+없는 설정이라 남겨두면 혼란만 줌), `AiService.chatWithGemini`가 직접
+재시도하도록 고쳤다. 예외의 cause 체인을 타고 내려가 실제
+`com.google.genai.errors.ApiException`을 찾고, HTTP 상태 코드가 `429`(rate
+limit)거나 `500` 이상이면 재시도(최대 3회, 2초 간격), `400`/`401`처럼 다시
+해봐도 안 될 에러(`ClientException`, 보통 4xx)면 즉시 실패시킨다. 이 로직은
+`AiServiceTest`에 재시도-후-성공/클라이언트-에러-즉시실패/최대횟수-소진
+3가지 테스트로 커버해뒀다 — Mockito로 `ChatClient`가 감싸진 예외를 던지게
+만들어서 실제 네트워크 호출 없이 검증한다.
 
 **사이드이펙트**: `VisitTimeAssigner`(날짜별 시간 배정 호출)는 코드를 하나도
 안 고쳤는데, 마찬가지로 `AiService.chatWithGemini`를 통해 호출하기 때문에
-이제 자동으로 재시도 혜택을 받는다. 기존엔 이 호출부에 재시도가 전혀 없어서
-503이 나면 그냥 그 날짜 시간 배정을 조용히 포기했었다 — 의도한 개선.
+이 수정된 재시도 로직을 그대로 물려받는다. 기존엔 이 호출부에 재시도가 전혀
+없어서 503이 나면 그냥 그 날짜 시간 배정을 조용히 포기했었다 — 의도한 개선.
 
 ### 실사용 검증 중 발견한 문제 — SSE 타임아웃
 
@@ -291,8 +310,8 @@ public String chatWithGemini(List<ChatMessageDto> messages) {
   아니라 API 키 기반 Gemini Developer API 스타터 — 기존 GCP 서비스 계정 없이
   `gemini.api.key` 그대로 재사용 가능)
 - `application.properties`: `spring.ai.google.genai.api-key=${gemini.api.key}`,
-  `spring.ai.google.genai.chat.model=gemini-2.5-flash`,
-  `spring.ai.retry.max-attempts=3`
+  `spring.ai.google.genai.chat.model=gemini-2.5-flash` (재시도는 위에서 설명한
+  이유로 `spring.ai.retry.*`가 아니라 `AiService.chatWithGemini`가 직접 처리)
 
 각 단계는 별도 이슈로 등록해서 하나씩 브랜치 → 구현 → PR → 머지 사이클을
 온전히 돌린다 (`docs/WORKFLOW.md` 참고).

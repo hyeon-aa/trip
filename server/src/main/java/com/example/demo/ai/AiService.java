@@ -20,9 +20,17 @@ import org.springframework.web.client.RestClient;
 
 import com.example.demo.plan.dto.ChatMessageDto;
 import com.example.demo.redis.RedisService;
+import com.google.genai.errors.ApiException;
 
 @Service
 public class AiService {
+
+    // Spring AI의 spring-ai-starter-model-google-genai는 Gemini 쪽 에러를 전부
+    // 평범한 RuntimeException으로 감싸버려서, Spring AI 자체의 RetryTemplate
+    // (spring.ai.retry.*)이 재시도 대상(TransientAiException)으로 인식하지
+    // 못한다 — 그래서 이 provider에 한해 재시도를 직접 구현한다.
+    private static final int MAX_CHAT_ATTEMPTS = 3;
+    private static final long RETRY_DELAY_MS = 2000L;
 
     private final RedisService redisService;
     private final ChatClient chatClient;
@@ -136,9 +144,48 @@ public class AiService {
             }
         }
 
-        long start = System.currentTimeMillis();
-        String result = chatClient.prompt(new Prompt(chatMessages)).call().content();
-        System.out.println("[chatWithGemini] Gemini 응답 소요시간: " + (System.currentTimeMillis() - start) + "ms");
-        return result;
+        Prompt prompt = new Prompt(chatMessages);
+        int attempts = 0;
+        while (true) {
+            try {
+                long start = System.currentTimeMillis();
+                String result = chatClient.prompt(prompt).call().content();
+                System.out.println("[chatWithGemini] Gemini 응답 소요시간: " + (System.currentTimeMillis() - start) + "ms");
+                return result;
+            } catch (RuntimeException e) {
+                attempts++;
+                if (attempts >= MAX_CHAT_ATTEMPTS || !isRetryableGeminiError(e)) {
+                    throw e;
+                }
+                System.out.println("[chatWithGemini] 일시적 오류로 재시도 (" + attempts + "/" + (MAX_CHAT_ATTEMPTS - 1) + "): " + e.getMessage());
+                sleep(RETRY_DELAY_MS);
+            }
+        }
+    }
+
+    // GoogleGenAiChatModel이 실제로 던지는 예외(ApiException 계열)는 항상
+    // RuntimeException("Failed to generate content", cause)로 한 번 감싸져서
+    // 올라오므로, cause 체인을 타고 내려가 실제 HTTP 상태 코드를 확인한다.
+    // 503처럼 5xx거나 429(rate limit)면 재시도, 400/401처럼 다시 해봐도 안 될
+    // 에러(ClientException, 보통 4xx)면 즉시 실패시킨다.
+    private boolean isRetryableGeminiError(Throwable e) {
+        Throwable cause = e;
+        while (cause != null) {
+            if (cause instanceof ApiException apiException) {
+                int code = apiException.code();
+                return code == 429 || code >= 500;
+            }
+            cause = cause.getCause();
+        }
+        return false;
+    }
+
+    private void sleep(long millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(e);
+        }
     }
 }

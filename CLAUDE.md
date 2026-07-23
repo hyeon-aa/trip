@@ -68,9 +68,11 @@ below — via a place search, not free text).
    region/category when detected; falls back to an unfiltered search if the filtered
    result is empty. Candidate places also get short ids (`p1`, `p2`, ...).
 5. Builds a large Korean system prompt and calls `AiService.chatWithGemini` (a Spring AI
-   `ChatClient` call — transient errors like 503 are retried automatically by its
-   `RetryTemplate`, `spring.ai.retry.max-attempts`) in a background thread. The place
-   list is grouped by region and then by
+   `ChatClient` call — transient errors like 503 are retried manually inside
+   `chatWithGemini` itself, not by Spring AI's `RetryTemplate`: the `google-genai`
+   starter wraps every error into a plain `RuntimeException`, so Spring AI's built-in
+   retry never recognizes it as retryable; see `docs/SPRING_AI.md`) in a background
+   thread. The place list is grouped by region and then by
    `sub_region` (읍/면/동, see "Data model") so the model can keep each day's places in
    one small area; wishlist places are listed too. Rules cover output format, minimum
    3 places/day, no reusing a place across days, and honoring arrival/departure time
