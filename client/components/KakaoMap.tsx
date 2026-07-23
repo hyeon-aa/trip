@@ -9,7 +9,6 @@ import { useEffect, useState } from "react";
 import {
   CustomOverlayMap,
   Map,
-  MapInfoWindow,
   MapMarker,
   Polyline,
 } from "react-kakao-maps-sdk";
@@ -147,7 +146,7 @@ export default function KakaoMap() {
               );
             })()}
           {selectedMarker && (
-            <MapInfoWindow
+            <CustomOverlayMap
               position={
                 selectedMarker.kind === "wishlist"
                   ? {
@@ -159,49 +158,54 @@ export default function KakaoMap() {
                       lng: selectedMarker.place.lng!,
                     }
               }
-              zIndex={10}
+              yAnchor={1}
+              zIndex={20}
+              clickable
             >
-              <div className="relative px-3 py-2.5 min-w-[160px] max-w-[220px] text-left">
-                <button
-                  type="button"
-                  onClick={() => setSelectedMarker(null)}
-                  aria-label="닫기"
-                  className="absolute top-1.5 right-1.5 text-stone-300 hover:text-stone-500 text-xs leading-none"
-                >
-                  ✕
-                </button>
-                <p className="font-medium text-sm text-stone-700 pr-4">
-                  {selectedMarker.kind === "wishlist"
-                    ? selectedMarker.item.name
-                    : selectedMarker.place.name}
-                </p>
-                <p className="text-xs text-sky-600 mt-0.5">
-                  {selectedMarker.kind === "wishlist"
-                    ? selectedMarker.item.category
-                    : selectedMarker.place.category}
-                </p>
-                {selectedMarker.kind === "schedule" ? (
-                  <>
-                    {selectedMarker.place.recommendedTime && (
-                      <p className="text-xs text-stone-500 mt-1.5">
-                        🕒 {selectedMarker.place.recommendedTime}
+              <div className="relative -translate-y-3">
+                <div className="relative w-64 px-3.5 py-3 text-left bg-white rounded-2xl shadow-lg shadow-stone-300/40 border border-stone-100">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedMarker(null)}
+                    aria-label="닫기"
+                    className="absolute top-2 right-2 w-5 h-5 flex items-center justify-center rounded-full text-stone-400 hover:bg-stone-100 hover:text-stone-600 text-xs leading-none transition-colors"
+                  >
+                    ✕
+                  </button>
+                  <p className="font-semibold text-sm text-stone-800 pr-6 break-keep leading-snug">
+                    {selectedMarker.kind === "wishlist"
+                      ? selectedMarker.item.name
+                      : selectedMarker.place.name}
+                  </p>
+                  <span className="inline-block mt-1.5 px-2 py-0.5 rounded-full bg-sky-50 text-sky-600 text-[11px] font-medium">
+                    {selectedMarker.kind === "wishlist"
+                      ? selectedMarker.item.category
+                      : selectedMarker.place.category}
+                  </span>
+                  {selectedMarker.kind === "schedule" ? (
+                    <>
+                      {selectedMarker.place.recommendedTime && (
+                        <p className="text-xs text-stone-500 mt-2 break-keep">
+                          🕒 {selectedMarker.place.recommendedTime}
+                        </p>
+                      )}
+                      {selectedMarker.place.reason && (
+                        <p className="text-xs text-stone-600 mt-1.5 leading-relaxed break-keep border-t border-stone-100 pt-1.5">
+                          {selectedMarker.place.reason}
+                        </p>
+                      )}
+                    </>
+                  ) : (
+                    selectedMarker.item.address && (
+                      <p className="text-xs text-stone-500 mt-2 leading-relaxed break-keep">
+                        {selectedMarker.item.address}
                       </p>
-                    )}
-                    {selectedMarker.place.reason && (
-                      <p className="text-xs text-stone-600 mt-1">
-                        {selectedMarker.place.reason}
-                      </p>
-                    )}
-                  </>
-                ) : (
-                  selectedMarker.item.address && (
-                    <p className="text-xs text-stone-500 mt-1.5">
-                      {selectedMarker.item.address}
-                    </p>
-                  )
-                )}
+                    )
+                  )}
+                </div>
+                <div className="absolute left-1/2 -bottom-1.5 -translate-x-1/2 w-3 h-3 bg-white border-b border-r border-stone-100 rotate-45" />
               </div>
-            </MapInfoWindow>
+            </CustomOverlayMap>
           )}
         </Map>
       </div>
