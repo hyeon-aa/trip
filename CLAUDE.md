@@ -67,8 +67,10 @@ below — via a place search, not free text).
    (`embedding <=> query_embedding`, ORDER BY distance) over `jeju_place`, filtered by
    region/category when detected; falls back to an unfiltered search if the filtered
    result is empty. Candidate places also get short ids (`p1`, `p2`, ...).
-5. Builds a large Korean system prompt and calls `AiService.chatWithGemini` (with retry
-   on 503) in a background thread. The place list is grouped by region and then by
+5. Builds a large Korean system prompt and calls `AiService.chatWithGemini` (a Spring AI
+   `ChatClient` call — transient errors like 503 are retried automatically by its
+   `RetryTemplate`, `spring.ai.retry.max-attempts`) in a background thread. The place
+   list is grouped by region and then by
    `sub_region` (읍/면/동, see "Data model") so the model can keep each day's places in
    one small area; wishlist places are listed too. Rules cover output format, minimum
    3 places/day, no reusing a place across days, and honoring arrival/departure time
@@ -91,8 +93,11 @@ The AI must only ever choose place ids from the lists given in the prompt — it
 invents places or coordinates.
 
 ### External integrations (`AiService`, `jeju/`)
-- **Gemini** (`gemini.*` in `application.properties`): both chat completion
-  (`gemini-2.5-flash`) and text embeddings (`gemini-embedding-001`).
+- **Gemini**: chat completion (`gemini-2.5-flash`) goes through Spring AI's
+  `ChatClient` (`spring.ai.google.genai.*` in `application.properties`, backed by the
+  Gemini Developer API key); text embeddings (`gemini-embedding-001`) still call the
+  raw REST API directly via `RestClient` (`gemini.api.key`) — not yet migrated (see
+  `docs/SPRING_AI.md`). Both properties resolve to the same underlying key.
 - **Groq** (`AiService.chat`, `llama-3.3-70b-versatile`): present but not used by the
   main plan-chat flow.
 - **TourAPI / VisitJeju** (`jeju/TourApiClient`, `TourApiService`, `TourDetailService`):

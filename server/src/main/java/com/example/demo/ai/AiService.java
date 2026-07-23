@@ -3,10 +3,17 @@ package com.example.demo.ai;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 
+import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.messages.AssistantMessage;
+import org.springframework.ai.chat.messages.Message;
+import org.springframework.ai.chat.messages.SystemMessage;
+import org.springframework.ai.chat.messages.UserMessage;
+import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
@@ -18,9 +25,11 @@ import com.example.demo.redis.RedisService;
 public class AiService {
 
     private final RedisService redisService;
+    private final ChatClient chatClient;
 
-    public AiService(RedisService redisService) {
+    public AiService(RedisService redisService, ChatClient.Builder chatClientBuilder) {
         this.redisService = redisService;
+        this.chatClient = chatClientBuilder.build();
     }
 
     @Value("${groq.api.key}")
@@ -109,34 +118,27 @@ public class AiService {
     }
 
     public String chatWithGemini(List<ChatMessageDto> messages) {
-        RestClient restClient = RestClient.create();
-    
-        List<Map<String, Object>> contents = messages.stream()
-            .filter(m -> !m.role().equals("system"))
-            .map(m -> Map.<String, Object>of(
-                "role", m.role().equals("assistant") ? "model" : "user",
-                "parts", List.of(Map.of("text", m.content()))
-            ))
-            .toList();
-    
-        String systemInstruction = messages.stream()
+        List<Message> chatMessages = new ArrayList<>();
+
+        messages.stream()
             .filter(m -> m.role().equals("system"))
             .findFirst()
-            .map(ChatMessageDto::content)
-            .orElse("");
-    
-        Map<String, Object> body = Map.of(
-            "system_instruction", Map.of("parts", List.of(Map.of("text", systemInstruction))),
-            "contents", contents
-        );
-    
-        GeminiChatResponse response = restClient.post()
-            .uri("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" + geminiApiKey)
-            .header("Content-Type", "application/json")
-            .body(body)
-            .retrieve()
-            .body(GeminiChatResponse.class);
-    
-        return response.candidates.get(0).content.parts.get(0).text;
+            .ifPresent(m -> chatMessages.add(new SystemMessage(m.content())));
+
+        for (ChatMessageDto m : messages) {
+            if (m.role().equals("system")) {
+                continue;
+            }
+            if (m.role().equals("assistant")) {
+                chatMessages.add(new AssistantMessage(m.content()));
+            } else {
+                chatMessages.add(new UserMessage(m.content()));
+            }
+        }
+
+        long start = System.currentTimeMillis();
+        String result = chatClient.prompt(new Prompt(chatMessages)).call().content();
+        System.out.println("[chatWithGemini] Gemini 응답 소요시간: " + (System.currentTimeMillis() - start) + "ms");
+        return result;
     }
 }

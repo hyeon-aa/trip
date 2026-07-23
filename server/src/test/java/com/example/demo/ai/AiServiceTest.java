@@ -2,6 +2,7 @@ package com.example.demo.ai;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
@@ -9,14 +10,33 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import org.junit.jupiter.api.Test;
+import java.util.List;
 
+import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.messages.AssistantMessage;
+import org.springframework.ai.chat.messages.Message;
+import org.springframework.ai.chat.messages.SystemMessage;
+import org.springframework.ai.chat.messages.UserMessage;
+import org.springframework.ai.chat.prompt.Prompt;
+
+import com.example.demo.plan.dto.ChatMessageDto;
 import com.example.demo.redis.RedisService;
 
 class AiServiceTest {
 
     private final RedisService redisService = mock(RedisService.class);
-    private final AiService aiService = new AiService(redisService);
+    private final ChatClient chatClient = mock(ChatClient.class);
+    private final AiService aiService = new AiService(redisService, builderReturning(chatClient));
+
+    // ChatClient.Builder는 스프링이 자동 구성해주는 Bean이라, 테스트에서는
+    // build()가 우리가 만든 chatClient 모킹 객체를 돌려주도록 직접 구성한다.
+    private static ChatClient.Builder builderReturning(ChatClient chatClient) {
+        ChatClient.Builder builder = mock(ChatClient.Builder.class);
+        when(builder.build()).thenReturn(chatClient);
+        return builder;
+    }
 
     @Test
     void 동일한_텍스트는_항상_같은_캐시_키를_만든다() {
@@ -58,5 +78,35 @@ class AiServiceTest {
         doThrow(new RuntimeException("연결 실패")).when(redisService).save(anyString(), anyString());
 
         assertThatCode(() -> aiService.saveCache("아무 키", "아무 값")).doesNotThrowAnyException();
+    }
+
+    @Test
+    void chatWithGemini는_system_메시지를_먼저_넣고_나머지는_순서대로_역할을_변환해서_호출한다() {
+        ChatClient.ChatClientRequestSpec requestSpec = mock(ChatClient.ChatClientRequestSpec.class);
+        ChatClient.CallResponseSpec callResponseSpec = mock(ChatClient.CallResponseSpec.class);
+        when(chatClient.prompt(any(Prompt.class))).thenReturn(requestSpec);
+        when(requestSpec.call()).thenReturn(callResponseSpec);
+        when(callResponseSpec.content()).thenReturn("응답 내용");
+
+        List<ChatMessageDto> messages = List.of(
+            new ChatMessageDto("system", "너는 여행 상담사야"),
+            new ChatMessageDto("user", "안녕"),
+            new ChatMessageDto("assistant", "네 안녕하세요"),
+            new ChatMessageDto("user", "제주도 추천해줘")
+        );
+
+        String result = aiService.chatWithGemini(messages);
+
+        assertThat(result).isEqualTo("응답 내용");
+
+        ArgumentCaptor<Prompt> promptCaptor = ArgumentCaptor.forClass(Prompt.class);
+        verify(chatClient).prompt(promptCaptor.capture());
+        List<Message> instructions = promptCaptor.getValue().getInstructions();
+
+        assertThat(instructions).hasSize(4);
+        assertThat(instructions.get(0)).isInstanceOf(SystemMessage.class);
+        assertThat(instructions.get(1)).isInstanceOf(UserMessage.class);
+        assertThat(instructions.get(2)).isInstanceOf(AssistantMessage.class);
+        assertThat(instructions.get(3)).isInstanceOf(UserMessage.class);
     }
 }

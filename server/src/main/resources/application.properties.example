@@ -22,6 +22,10 @@ spring.data.redis.port=6379
 visitjeju.api.key=<YOUR_VISITJEJU_API_KEY>
 
 gemini.api.key=<YOUR_GEMINI_API_KEY>
+spring.ai.google.genai.api-key=${gemini.api.key}
+spring.ai.google.genai.chat.model=gemini-2.5-flash
+
+spring.ai.retry.max-attempts=3
 
 groq.api.key=<YOUR_GROQ_API_KEY>
 
