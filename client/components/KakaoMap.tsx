@@ -1,6 +1,6 @@
 "use client";
 
-import { Schedule } from "@/feature/plan/api";
+import { Place, Schedule } from "@/feature/plan/api";
 import { getWishlist } from "@/feature/wishlist/api";
 import { Wishlist } from "@/types/wishlist/wishlist";
 import { getDayColor } from "@/lib/dayColors";
@@ -15,11 +15,20 @@ import {
 import PlanChat from "./PlanChat";
 import SchedulePanel from "./SchedulePanel";
 
+// 지도 위에서 클릭된 마커 하나만 추적한다. 위시리스트 마커는 recommendedTime/reason이
+// 없어 일정 마커와 팝업 내용을 다르게 분기해야 하므로 태그드 유니온으로 구분한다.
+type SelectedMarker =
+  | { kind: "wishlist"; item: Wishlist }
+  | { kind: "schedule"; place: Place };
+
 export default function KakaoMap() {
   const [center, setCenter] = useState({ lat: 33.450701, lng: 126.570667 });
   const [wishlist, setWishlist] = useState<Wishlist[]>([]);
   const [scheduleData, setScheduleData] = useState<Schedule | null>(null);
   const [selectedDay, setSelectedDay] = useState<number | null>(null);
+  const [selectedMarker, setSelectedMarker] = useState<SelectedMarker | null>(
+    null
+  );
 
   useEffect(() => {
     getWishlist().then((data) => setWishlist(data));
@@ -28,12 +37,20 @@ export default function KakaoMap() {
   const handleScheduleUpdate = (schedule: Schedule) => {
     setScheduleData(schedule);
     setSelectedDay(schedule.days[0]?.day ?? null);
+    setSelectedMarker(null);
 
     // 첫번째 장소로 지도 중심 이동
     const firstPlace = schedule.days[0]?.places.find((p) => p.lat && p.lng);
     if (firstPlace?.lat && firstPlace?.lng) {
       setCenter({ lat: firstPlace.lat, lng: firstPlace.lng });
     }
+  };
+
+  // 날짜 탭을 바꾸면 이전 날짜의 장소 마커는 지도에서 사라지므로, 열려있던
+  // 팝업이 더 이상 없는 마커를 가리키며 남아있지 않도록 함께 닫는다.
+  const handleSelectDay = (day: number) => {
+    setSelectedDay(day);
+    setSelectedMarker(null);
   };
 
   const handleDeletePlace = (day: number, index: number) => {
@@ -84,6 +101,13 @@ export default function KakaoMap() {
                 size: { width: 32, height: 35 },
                 options: { offset: { x: 16, y: 35 } },
               }}
+              onClick={() =>
+                setSelectedMarker((prev) =>
+                  prev?.kind === "wishlist" && prev.item.id === item.id
+                    ? null
+                    : { kind: "wishlist", item }
+                )
+              }
             />
           ))}
           {activeDay &&
@@ -95,8 +119,17 @@ export default function KakaoMap() {
                     <CustomOverlayMap
                       key={`schedule-${activeDay.day}-${idx}`}
                       position={{ lat: place.lat!, lng: place.lng! }}
+                      clickable
                     >
                       <div
+                        onClick={() =>
+                          setSelectedMarker((prev) =>
+                            prev?.kind === "schedule" &&
+                            prev.place === place
+                              ? null
+                              : { kind: "schedule", place }
+                          )
+                        }
                         style={{
                           background: getDayColor(activeDay.day),
                           color: "white",
@@ -110,6 +143,7 @@ export default function KakaoMap() {
                           fontWeight: 600,
                           border: "2px solid white",
                           boxShadow: "0 1px 3px rgba(0,0,0,0.3)",
+                          cursor: "pointer",
                         }}
                       >
                         {idx + 1}
@@ -126,6 +160,68 @@ export default function KakaoMap() {
                 </>
               );
             })()}
+          {selectedMarker && (
+            <CustomOverlayMap
+              position={
+                selectedMarker.kind === "wishlist"
+                  ? {
+                      lat: selectedMarker.item.lat,
+                      lng: selectedMarker.item.lng,
+                    }
+                  : {
+                      lat: selectedMarker.place.lat!,
+                      lng: selectedMarker.place.lng!,
+                    }
+              }
+              yAnchor={1}
+              zIndex={20}
+              clickable
+            >
+              <div className="relative -translate-y-3">
+                <div className="relative w-64 px-3.5 py-3 text-left bg-white rounded-2xl shadow-lg shadow-stone-300/40 border border-stone-100">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedMarker(null)}
+                    aria-label="닫기"
+                    className="absolute top-2 right-2 w-5 h-5 flex items-center justify-center rounded-full text-stone-400 hover:bg-stone-100 hover:text-stone-600 text-xs leading-none transition-colors"
+                  >
+                    ✕
+                  </button>
+                  <p className="font-semibold text-sm text-stone-800 pr-6 break-keep leading-snug">
+                    {selectedMarker.kind === "wishlist"
+                      ? selectedMarker.item.name
+                      : selectedMarker.place.name}
+                  </p>
+                  <span className="inline-block mt-1.5 px-2 py-0.5 rounded-full bg-sky-50 text-sky-600 text-[11px] font-medium">
+                    {selectedMarker.kind === "wishlist"
+                      ? selectedMarker.item.category
+                      : selectedMarker.place.category}
+                  </span>
+                  {selectedMarker.kind === "schedule" ? (
+                    <>
+                      {selectedMarker.place.recommendedTime && (
+                        <p className="text-xs text-stone-500 mt-2 break-keep">
+                          🕒 {selectedMarker.place.recommendedTime}
+                        </p>
+                      )}
+                      {selectedMarker.place.reason && (
+                        <p className="text-xs text-stone-600 mt-1.5 leading-relaxed break-keep border-t border-stone-100 pt-1.5">
+                          {selectedMarker.place.reason}
+                        </p>
+                      )}
+                    </>
+                  ) : (
+                    selectedMarker.item.address && (
+                      <p className="text-xs text-stone-500 mt-2 leading-relaxed break-keep">
+                        {selectedMarker.item.address}
+                      </p>
+                    )
+                  )}
+                </div>
+                <div className="absolute left-1/2 -bottom-1.5 -translate-x-1/2 w-3 h-3 bg-white border-b border-r border-stone-100 rotate-45" />
+              </div>
+            </CustomOverlayMap>
+          )}
         </Map>
       </div>
 
@@ -141,7 +237,7 @@ export default function KakaoMap() {
             <SchedulePanel
               schedule={scheduleData}
               selectedDay={selectedDay}
-              onSelectDay={setSelectedDay}
+              onSelectDay={handleSelectDay}
               onDeletePlace={handleDeletePlace}
             />
           ) : (
