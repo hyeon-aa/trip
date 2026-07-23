@@ -3,24 +3,41 @@ package com.example.demo.ai;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 
+import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.messages.AssistantMessage;
+import org.springframework.ai.chat.messages.Message;
+import org.springframework.ai.chat.messages.SystemMessage;
+import org.springframework.ai.chat.messages.UserMessage;
+import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 
 import com.example.demo.plan.dto.ChatMessageDto;
 import com.example.demo.redis.RedisService;
+import com.google.genai.errors.ApiException;
 
 @Service
 public class AiService {
 
-    private final RedisService redisService;
+    // Spring AI의 spring-ai-starter-model-google-genai는 Gemini 쪽 에러를 전부
+    // 평범한 RuntimeException으로 감싸버려서, Spring AI 자체의 RetryTemplate
+    // (spring.ai.retry.*)이 재시도 대상(TransientAiException)으로 인식하지
+    // 못한다 — 그래서 이 provider에 한해 재시도를 직접 구현한다.
+    private static final int MAX_CHAT_ATTEMPTS = 3;
+    private static final long RETRY_DELAY_MS = 2000L;
 
-    public AiService(RedisService redisService) {
+    private final RedisService redisService;
+    private final ChatClient chatClient;
+
+    public AiService(RedisService redisService, ChatClient.Builder chatClientBuilder) {
         this.redisService = redisService;
+        this.chatClient = chatClientBuilder.build();
     }
 
     @Value("${groq.api.key}")
@@ -109,34 +126,66 @@ public class AiService {
     }
 
     public String chatWithGemini(List<ChatMessageDto> messages) {
-        RestClient restClient = RestClient.create();
-    
-        List<Map<String, Object>> contents = messages.stream()
-            .filter(m -> !m.role().equals("system"))
-            .map(m -> Map.<String, Object>of(
-                "role", m.role().equals("assistant") ? "model" : "user",
-                "parts", List.of(Map.of("text", m.content()))
-            ))
-            .toList();
-    
-        String systemInstruction = messages.stream()
+        List<Message> chatMessages = new ArrayList<>();
+
+        messages.stream()
             .filter(m -> m.role().equals("system"))
             .findFirst()
-            .map(ChatMessageDto::content)
-            .orElse("");
-    
-        Map<String, Object> body = Map.of(
-            "system_instruction", Map.of("parts", List.of(Map.of("text", systemInstruction))),
-            "contents", contents
-        );
-    
-        GeminiChatResponse response = restClient.post()
-            .uri("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" + geminiApiKey)
-            .header("Content-Type", "application/json")
-            .body(body)
-            .retrieve()
-            .body(GeminiChatResponse.class);
-    
-        return response.candidates.get(0).content.parts.get(0).text;
+            .ifPresent(m -> chatMessages.add(new SystemMessage(m.content())));
+
+        for (ChatMessageDto m : messages) {
+            if (m.role().equals("system")) {
+                continue;
+            }
+            if (m.role().equals("assistant")) {
+                chatMessages.add(new AssistantMessage(m.content()));
+            } else {
+                chatMessages.add(new UserMessage(m.content()));
+            }
+        }
+
+        Prompt prompt = new Prompt(chatMessages);
+        int attempts = 0;
+        while (true) {
+            try {
+                long start = System.currentTimeMillis();
+                String result = chatClient.prompt(prompt).call().content();
+                System.out.println("[chatWithGemini] Gemini 응답 소요시간: " + (System.currentTimeMillis() - start) + "ms");
+                return result;
+            } catch (RuntimeException e) {
+                attempts++;
+                if (attempts >= MAX_CHAT_ATTEMPTS || !isRetryableGeminiError(e)) {
+                    throw e;
+                }
+                System.out.println("[chatWithGemini] 일시적 오류로 재시도 (" + attempts + "/" + (MAX_CHAT_ATTEMPTS - 1) + "): " + e.getMessage());
+                sleep(RETRY_DELAY_MS);
+            }
+        }
+    }
+
+    // GoogleGenAiChatModel이 실제로 던지는 예외(ApiException 계열)는 항상
+    // RuntimeException("Failed to generate content", cause)로 한 번 감싸져서
+    // 올라오므로, cause 체인을 타고 내려가 실제 HTTP 상태 코드를 확인한다.
+    // 503처럼 5xx거나 429(rate limit)면 재시도, 400/401처럼 다시 해봐도 안 될
+    // 에러(ClientException, 보통 4xx)면 즉시 실패시킨다.
+    private boolean isRetryableGeminiError(Throwable e) {
+        Throwable cause = e;
+        while (cause != null) {
+            if (cause instanceof ApiException apiException) {
+                int code = apiException.code();
+                return code == 429 || code >= 500;
+            }
+            cause = cause.getCause();
+        }
+        return false;
+    }
+
+    private void sleep(long millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(e);
+        }
     }
 }

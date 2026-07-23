@@ -65,7 +65,10 @@ public class PlanChatController {
 
     @PostMapping(value = "/chat", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter chat(@RequestBody PlanChatRequest request) {
-        SseEmitter emitter = new SseEmitter(60_000L);
+        // 메인 일정 생성(Gemini 1회) + 날짜별 시간 배정(Gemini N회, 순차 호출)까지
+        // 끝나야 응답이 나가므로, 60초는 다일차 일정에서 너무 빠듯하다 (이슈 #42
+        // 실사용 검증 중 실제로 503을 확인함). 180초로 넉넉하게 잡는다.
+        SseEmitter emitter = new SseEmitter(180_000L);
         ObjectMapper mapper = new ObjectMapper();
 
         String message = request.message();
@@ -228,7 +231,7 @@ public class PlanChatController {
         // 7. 비동기 쓰레드로 AI 요청 및 데이터 후처리 가공 (SSE 스트리밍 전송)
         new Thread(() -> {
             try {
-                String response = chatWithRetry(messages);
+                String response = aiService.chatWithGemini(messages);
                 JsonNode root = aiResponseParser.parse(response);
                 String type = root.has("type") ? root.get("type").asText() : "";
 
@@ -336,18 +339,5 @@ public class PlanChatController {
         }
         sb.append("user: ").append(message).append("\n");
         return sb.toString();
-    }
-
-    private String chatWithRetry(List<ChatMessageDto> messages) throws Exception {
-        int attempts = 0;
-        while (true) {
-            try {
-                return aiService.chatWithGemini(messages);
-            } catch (org.springframework.web.client.HttpServerErrorException.ServiceUnavailable e) {
-                attempts++;
-                if (attempts >= 3) throw e;
-                Thread.sleep(2000);
-            }
-        }
     }
 }
