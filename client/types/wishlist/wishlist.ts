@@ -6,4 +6,5 @@ export interface Wishlist {
   category: string;
   address: string;
   kakaoPlaceId: string;
+  memo: string | null;
 }
