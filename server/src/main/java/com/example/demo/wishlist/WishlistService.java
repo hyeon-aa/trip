@@ -6,6 +6,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 
 import com.example.demo.wishlist.dto.CreateWishlistRequest;
+import com.example.demo.wishlist.dto.UpdateWishlistMemoRequest;
 import com.example.demo.wishlist.dto.WishlistResponse;
 
 @Service
@@ -28,6 +29,7 @@ public class WishlistService {
         wishlist.setAddress(request.address());
         wishlist.setLat(request.lat());
         wishlist.setLng(request.lng());
+        wishlist.setMemo(request.memo());
 
         Wishlist saved = wishlistRepository.save(wishlist);
 
@@ -48,6 +50,17 @@ public class WishlistService {
         eventPublisher.publishEvent(new WishlistRemovedEvent(id));
     }
 
+    public WishlistResponse updateMemo(Long id, UpdateWishlistMemoRequest request) {
+        Wishlist wishlist = wishlistRepository.findById(id)
+            .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 위시리스트입니다: " + id));
+
+        wishlist.setMemo(request.memo());
+
+        Wishlist saved = wishlistRepository.save(wishlist);
+
+        return toResponse(saved);
+    }
+
     private WishlistResponse toResponse(Wishlist wishlist) {
         return new WishlistResponse(
             wishlist.getId(),
@@ -55,7 +68,8 @@ public class WishlistService {
             wishlist.getCategory(),
             wishlist.getAddress(),
             wishlist.getLat(),
-            wishlist.getLng()
+            wishlist.getLng(),
+            wishlist.getMemo()
         );
     }
 }

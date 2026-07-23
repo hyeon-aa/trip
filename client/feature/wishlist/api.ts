@@ -28,3 +28,15 @@ export const deleteWishlist = async (id: number): Promise<void> => {
     method: "DELETE",
   });
 };
+
+export const updateWishlistMemo = async (
+  id: number,
+  memo: string
+): Promise<Wishlist> => {
+  const res = await fetch(`${BASE_URL}/wishlist/${id}/memo`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ memo }),
+  });
+  return res.json();
+};

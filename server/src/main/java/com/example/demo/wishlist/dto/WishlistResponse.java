@@ -6,6 +6,7 @@ public record WishlistResponse(
     String category,
     String address,
     Double lat,
-    Double lng
+    Double lng,
+    String memo
 ) {
 }
