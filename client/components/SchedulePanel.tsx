@@ -7,12 +7,14 @@ interface Props {
   schedule: Schedule;
   selectedDay: number;
   onSelectDay: (day: number) => void;
+  onDeletePlace: (day: number, index: number) => void;
 }
 
 export default function SchedulePanel({
   schedule,
   selectedDay,
   onSelectDay,
+  onDeletePlace,
 }: Props) {
   const day = schedule.days.find((d) => d.day === selectedDay);
 
@@ -65,6 +67,15 @@ export default function SchedulePanel({
                 <span className="text-xs text-stone-400">
                   {place.category}
                 </span>
+
+                <button
+                  type="button"
+                  onClick={() => onDeletePlace(day.day, idx)}
+                  aria-label={`${place.name} 삭제`}
+                  className="ml-auto text-stone-400 hover:text-red-500 transition-colors w-5 h-5 flex items-center justify-center shrink-0"
+                >
+                  ✕
+                </button>
               </div>
 
               <p className="text-xs text-stone-500 mt-1">
