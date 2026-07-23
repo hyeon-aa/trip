@@ -75,7 +75,7 @@ function WishlistMemo({
         </p>
       ) : (
         <p className="text-xs text-sky-400 group-hover:text-sky-600 transition-colors">
-          + 메모 남기기
+          ✏️ 메모 추가
         </p>
       )}
     </div>
