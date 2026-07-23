@@ -26,4 +26,5 @@ public class Wishlist {
     private String category;
     private String kakaoPlaceId;
     private String address;
+    private String memo;
 }

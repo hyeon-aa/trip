@@ -6,6 +6,7 @@ import {
   addToWishlist,
   deleteWishlist,
   getWishlist,
+  updateWishlistMemo,
 } from "@/feature/wishlist/api";
 import { Place } from "@/types/place/place";
 import { Wishlist } from "@/types/wishlist/wishlist";
@@ -32,6 +33,11 @@ export default function WishlistPage() {
     await fetchWishlist();
   };
 
+  const handleUpdateMemo = async (id: number, memo: string) => {
+    await updateWishlistMemo(id, memo);
+    await fetchWishlist();
+  };
+
   return (
     <div className="min-h-screen bg-sky-50 flex justify-center">
       <div className="w-full max-w-xl bg-white min-h-screen flex flex-col shadow-sm">
@@ -53,7 +59,11 @@ export default function WishlistPage() {
         </div>
         <SearchBar onAddToWishlist={handleAddToWishlist} />
         <div className="flex-1 overflow-y-auto">
-          <WishlistPanel wishlist={wishlist} onDelete={handleDelete} />
+          <WishlistPanel
+            wishlist={wishlist}
+            onDelete={handleDelete}
+            onUpdateMemo={handleUpdateMemo}
+          />
         </div>
       </div>
     </div>
