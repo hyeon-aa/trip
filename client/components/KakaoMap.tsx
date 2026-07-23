@@ -53,6 +53,21 @@ export default function KakaoMap() {
     setSelectedMarker(null);
   };
 
+  const handleDeletePlace = (day: number, index: number) => {
+    setScheduleData((prev) => {
+      if (!prev) return prev;
+
+      return {
+        ...prev,
+        days: prev.days.map((d) =>
+          d.day === day
+            ? { ...d, places: d.places.filter((_, i) => i !== index) }
+            : d
+        ),
+      };
+    });
+  };
+
   const activeDay = scheduleData?.days.find((d) => d.day === selectedDay);
 
   return (
@@ -223,6 +238,7 @@ export default function KakaoMap() {
               schedule={scheduleData}
               selectedDay={selectedDay}
               onSelectDay={handleSelectDay}
+              onDeletePlace={handleDeletePlace}
             />
           ) : (
             <p className="text-xs text-stone-400">
