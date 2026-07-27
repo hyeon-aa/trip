@@ -1,6 +1,7 @@
 package com.example.demo.plan;
 
 import java.util.List;
+import java.util.Objects;
 
 import org.springframework.stereotype.Service;
 
@@ -22,19 +23,40 @@ public class VisitTimeAssigner {
         this.aiResponseParser = aiResponseParser;
     }
 
+    // fixedTimes는 orderedPlaces와 같은 순서/크기 — null이면 새로 시간 배정이
+    // 필요한 장소, 값이 있으면 이전 턴부터 유지되는 장소라 그 시간을 그대로
+    // 확정한다. AI 응답과 무관하게 fixed 항목은 항상 원래 값으로 덮어써서,
+    // 사용자가 손 안 댄 장소의 시간이 흔들리지 않게 보장한다(#40).
     public void assignTimesForDay(
         List<ObjectNode> orderedPlaces,
+        List<String> fixedTimes,
         String conversationContext,
         boolean isFirstDay,
-        boolean isLastDay
+        boolean isLastDay,
+        Integer minStartMinutes
     ) {
         if (orderedPlaces.isEmpty()) return;
+
+        // 전부 유지되는 장소면 새로 물어볼 게 없으니 Gemini 호출 자체를 생략한다.
+        if (fixedTimes.stream().allMatch(Objects::nonNull)) {
+            for (int i = 0; i < orderedPlaces.size(); i++) {
+                orderedPlaces.get(i).put("recommendedTime", fixedTimes.get(i));
+            }
+            return;
+        }
 
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < orderedPlaces.size(); i++) {
             ObjectNode p = orderedPlaces.get(i);
             sb.append(i + 1).append(". ").append(p.get("name").asText())
-              .append(" (").append(p.get("category").asText()).append(")\n");
+              .append(" (").append(p.get("category").asText()).append(")");
+            String fixed = fixedTimes.get(i);
+            if (fixed != null) {
+                sb.append(" — 이미 ").append(fixed).append("로 정해져 있습니다. 이 시간을 그대로 응답에 반환하세요.");
+            } else {
+                sb.append(" — 새로 시간을 정해주세요.");
+            }
+            sb.append("\n");
         }
 
         StringBuilder dayConstraints = new StringBuilder();
@@ -45,6 +67,12 @@ public class VisitTimeAssigner {
         if (isLastDay) {
             dayConstraints.append("- 이 날은 여행 마지막 날입니다. 대화에서 출발(비행기) 시간이 언급됐다면, ")
                 .append("그 시간에 늦지 않도록 마지막 장소 종료 시간과 공항 이동 여유를 확보하세요.\n");
+        }
+        if (minStartMinutes != null) {
+            dayConstraints.append(String.format(
+                "- 새로 시간을 정하는 장소는 반드시 %02d:%02d 이후에 배정하세요.\n",
+                minStartMinutes / 60, minStartMinutes % 60
+            ));
         }
 
         String prompt = String.format("""
@@ -62,22 +90,34 @@ public class VisitTimeAssigner {
             - 식사는 아침(08:00~10:00), 점심(12:00~14:00), 저녁(18:00~20:00) 시간대를 고려하세요.
             - 관광지는 1~2시간, 카페는 1시간 내외로 배정하세요.
             - 시간이 겹치지 않고, 앞 장소 종료 후 다음 장소가 이어지도록 하세요.
+            - "이미 정해져 있다"고 표시된 장소는 그 시간을 절대 바꾸지 말고 그대로 반환하세요.
             %s
-            반드시 아래 JSON 형식으로만 응답하세요:
+            반드시 아래 JSON 형식으로만 응답하세요(이미 정해진 장소도 포함해서 전체 개수만큼):
             { "times": ["07:00~17:00", "17:30~18:30", "..."] }
             """, conversationContext, sb.toString(), dayConstraints.toString());
 
         try {
             String response = aiService.chatWithGemini(List.of(new ChatMessageDto("user", prompt)));
             JsonNode root = aiResponseParser.parse(response);
-            if (root.has("times")) {
-                ArrayNode times = (ArrayNode) root.get("times");
-                for (int i = 0; i < orderedPlaces.size() && i < times.size(); i++) {
+            ArrayNode times = (root.has("times")) ? (ArrayNode) root.get("times") : null;
+            for (int i = 0; i < orderedPlaces.size(); i++) {
+                String fixed = fixedTimes.get(i);
+                if (fixed != null) {
+                    // AI가 뭐라고 답했든 무시하고 원래 값으로 확정한다.
+                    orderedPlaces.get(i).put("recommendedTime", fixed);
+                } else if (times != null && i < times.size()) {
                     orderedPlaces.get(i).put("recommendedTime", times.get(i).asText());
                 }
             }
         } catch (Exception e) {
             System.out.println("시간 재배정 실패: " + e.getMessage());
+            // 실패해도 유지 장소의 시간만큼은 보존한다.
+            for (int i = 0; i < orderedPlaces.size(); i++) {
+                String fixed = fixedTimes.get(i);
+                if (fixed != null) {
+                    orderedPlaces.get(i).put("recommendedTime", fixed);
+                }
+            }
         }
     }
 }

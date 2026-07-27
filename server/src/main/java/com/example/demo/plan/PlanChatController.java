@@ -1,8 +1,13 @@
 package com.example.demo.plan;
 
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import org.springframework.context.ApplicationEventPublisher;
@@ -18,6 +23,7 @@ import com.example.demo.jeju.JejuPlace;
 import com.example.demo.jeju.JejuPlaceRepository;
 import com.example.demo.plan.dto.ChatMessageDto;
 import com.example.demo.plan.dto.PlanChatRequest;
+import com.example.demo.plan.dto.ScheduleDto;
 import com.example.demo.wishlist.Wishlist;
 import com.example.demo.wishlist.WishlistRepository;
 
@@ -81,7 +87,7 @@ public class PlanChatController {
         // 1. 사용자 위시리스트 조회 및 맵 변환
         // id는 매 요청 1부터 다시 매기는 임시 번호 대신, DB의 실제 PK를 그대로 쓴다
         // ("w" + Wishlist.id) — 그래야 같은 장소가 항상 같은 id를 가져서, 턴이
-        // 바뀌어도 CurrentScheduleMerger가 이름/좌표로 퍼지 매칭할 필요 없이
+        //바뀌어도 CurrentScheduleMerger가 이름/좌표로 퍼지 매칭할 필요 없이
         // findById 하나로 바로 찾을 수 있다 (#40 리팩터링).
         List<Wishlist> wishlist = wishlistRepository.findAll();
         Map<String, Wishlist> wishlistIdMap = wishlist.stream()
@@ -277,10 +283,27 @@ public class PlanChatController {
                     // 잘못 발행되면 안 되므로).
                     List<PlaceIncludedInScheduleEvent> scheduleEvents = new ArrayList<>();
 
+                    // 날짜별 시간 배정(Gemini 호출)은 서로 완전히 독립적인데, 예전엔 이
+                    // for문 안에서 날짜마다 순서대로 기다렸다 — 한 번에 10~25초씩 걸리는
+                    // 호출이 N일치 쌓이면 다일차 일정일수록 응답이 그만큼 느려졌다(#42에서
+                    // 이미 지연 원인으로 지목됨). id 치환/동선 최적화(순수 CPU)는 그대로
+                    // 순차 처리하되, 시간 배정 호출만 따로 모아서 한꺼번에 병렬로 쏘고
+                    // 전부 끝난 뒤에 결과를 JSON 트리에 반영한다. `ordered` 리스트를
+                    // `assignTimesForDay` 호출이 아직 참조 중인 동안 다른 스레드에서
+                    // 건드리면 안 되므로, withoutCoords를 다시 합치는 것도 전부 끝난
+                    // 뒤로 미룬다.
+                    record DayWork(ArrayNode places, List<ObjectNode> ordered, List<ObjectNode> withoutCoords) {
+                    }
+                    List<DayWork> dayWorks = new ArrayList<>();
+                    List<CompletableFuture<Void>> timeAssignments = new ArrayList<>();
+
+                    Integer minStartMinutes = detectTimeThresholdMinutes(message);
+
                     for (int dayIdx = 0; dayIdx < days.size(); dayIdx++) {
                         JsonNode dayNode = days.get(dayIdx);
                         boolean isFirstDay = (dayIdx == 0);
                         boolean isLastDay = (dayIdx == days.size() - 1);
+                        int dayNumber = dayNode.has("day") ? dayNode.get("day").asInt() : dayIdx + 1;
                         ArrayNode places = (ArrayNode) dayNode.get("places");
 
                         for (JsonNode placeNode : places) {
@@ -337,11 +360,44 @@ public class PlanChatController {
                         // 도착/출발 시간 제약은 첫/마지막 날에만 의미가 있으므로, 그 외
                         // 날짜는 대화 전체를 프롬프트에 실어 보내지 않는다(토큰 낭비 방지).
                         String dayConversationContext = (isFirstDay || isLastDay) ? conversationContext : "";
-                        visitTimeAssigner.assignTimesForDay(ordered, dayConversationContext, isFirstDay, isLastDay);
-                        ordered.addAll(withoutCoords);
 
-                        places.removeAll();
-                        for (ObjectNode o : ordered) places.add(o);
+                        // 이전 턴과 id가 같은(=유지되는) 장소는 시간도 그대로 보존한다 —
+                        // 장소 하나만 바뀌어도 그 날 전체를 처음부터 다시 시간 배정하면
+                        // 손 안 댄 장소까지 시간이 흔들렸다(#40 실사용 검증 중 확인 —
+                        // "저녁만 바꿔줘" 요청에서 오후 장소 시간까지 밀려서 결과적으로
+                        // "저녁"이라 부를 시간대 자체가 사라짐). null이면 새로 배정 필요.
+                        Map<String, String> oldTimes = oldTimesForDay(request.currentSchedule(), dayNumber);
+                        List<String> fixedTimes = new ArrayList<>();
+                        for (ObjectNode o : ordered) {
+                            String oid = o.has("id") ? o.get("id").asText() : null;
+                            fixedTimes.add(oid != null ? oldTimes.get(oid) : null);
+                        }
+
+                        dayWorks.add(new DayWork(places, ordered, withoutCoords));
+                        timeAssignments.add(CompletableFuture.runAsync(() ->
+                            visitTimeAssigner.assignTimesForDay(
+                                ordered, fixedTimes, dayConversationContext, isFirstDay, isLastDay, minStartMinutes
+                            )
+                        ));
+                    }
+
+                    // 날짜별 시간 배정 호출이 전부 끝날 때까지 대기 — 서로 독립적이라
+                    // 순서 상관없이 동시에 진행되고, 가장 느린 호출 하나의 시간만큼만
+                    // 기다리면 된다(예전엔 날짜 수만큼의 합산 시간을 기다렸음).
+                    CompletableFuture.allOf(timeAssignments.toArray(new CompletableFuture[0])).join();
+
+                    // 병렬 호출 결과를 순서대로 다시 JSON 트리에 반영.
+                    // RouteOptimizer는 좌표 거리만 보고 순서를 정하는데, 유지되는
+                    // 장소는 시간이 고정돼 있어서 동선 순서와 시간 순서가 어긋날 수
+                    // 있다(예: 저녁에 새로 추가된 장소가 배열상 오후 장소보다 앞에
+                    // 옴) — 화면에 보여지는 순서는 항상 "이른 시간 먼저"가 자연스러우
+                    // 므로, 시간 배정이 다 끝난 뒤 recommendedTime 기준으로 다시
+                    // 정렬한다.
+                    for (DayWork work : dayWorks) {
+                        work.ordered().sort(Comparator.comparingInt(PlanChatController::startMinutes));
+                        work.ordered().addAll(work.withoutCoords());
+                        work.places().removeAll();
+                        for (ObjectNode o : work.ordered()) work.places().add(o);
                     }
 
                     // 모든 날짜가 예외 없이 다 처리된 뒤에만(=응답이 성공적으로
@@ -358,6 +414,58 @@ public class PlanChatController {
         }).start();
 
         return emitter;
+    }
+
+    // currentSchedule의 특정 날짜에서, 장소 id → 그때의 recommendedTime 맵을 만든다.
+    // 이번 턴 응답에 같은 id가 다시 나오면(=유지되는 장소) 이 시간을 그대로 쓴다.
+    private Map<String, String> oldTimesForDay(ScheduleDto currentSchedule, int dayNumber) {
+        if (currentSchedule == null || currentSchedule.days() == null) {
+            return Map.of();
+        }
+        for (ScheduleDto.DayDto day : currentSchedule.days()) {
+            if (day.day() != dayNumber || day.places() == null) {
+                continue;
+            }
+            Map<String, String> result = new LinkedHashMap<>();
+            for (ScheduleDto.PlaceDto p : day.places()) {
+                if (p.id() != null && p.recommendedTime() != null) {
+                    result.put(p.id(), p.recommendedTime());
+                }
+            }
+            return result;
+        }
+        return Map.of();
+    }
+
+    // "오후부터는 바꿔줘" 같은 시간대 기준 부분 교체 요청에서, 새로 배정되는 장소가
+    // 지켜야 할 최소 시작 시각(분 단위)을 찾는다. 사용자가 "5시 이후"처럼 구체적인
+    // 시간을 말하면 그대로 쓰고(12 이하 숫자는 오후로 보정), 아니면 "저녁"=18시,
+    // "오후"=12시를 기본값으로 쓴다("오전"은 굳이 하한을 걸 필요가 없어 생략).
+    private static final Pattern TIME_MENTION_PATTERN = Pattern.compile("(\\d{1,2})시\\s*이후");
+
+    private Integer detectTimeThresholdMinutes(String text) {
+        Matcher m = TIME_MENTION_PATTERN.matcher(text);
+        if (m.find()) {
+            int hour = Integer.parseInt(m.group(1));
+            if (hour >= 1 && hour <= 11) hour += 12;
+            return hour * 60;
+        }
+        if (text.contains("저녁")) return 18 * 60;
+        if (text.contains("오후")) return 12 * 60;
+        return null;
+    }
+
+    // "HH:mm~HH:mm" 형태의 recommendedTime에서 시작 시각을 분 단위로 뽑아낸다.
+    // 정렬 전용이라, 형식이 이상하거나 없으면 맨 뒤로 보내고 조용히 넘어간다.
+    private static int startMinutes(ObjectNode place) {
+        if (!place.has("recommendedTime")) return Integer.MAX_VALUE;
+        String start = place.get("recommendedTime").asText().split("~")[0].trim();
+        try {
+            String[] parts = start.split(":");
+            return Integer.parseInt(parts[0]) * 60 + Integer.parseInt(parts[1]);
+        } catch (Exception e) {
+            return Integer.MAX_VALUE;
+        }
     }
 
     private String buildConversationText(List<ChatMessageDto> history, String message) {
