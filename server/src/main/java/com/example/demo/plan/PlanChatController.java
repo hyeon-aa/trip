@@ -3,7 +3,6 @@ package com.example.demo.plan;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
 import org.springframework.context.ApplicationEventPublisher;
@@ -42,6 +41,7 @@ public class PlanChatController {
     private final PlaceGroupingService placeGroupingService;
     private final VisitTimeAssigner visitTimeAssigner;
     private final ApplicationEventPublisher eventPublisher;
+    private final CurrentScheduleMerger currentScheduleMerger;
 
     public PlanChatController(
         AiService aiService,
@@ -51,7 +51,8 @@ public class PlanChatController {
         AiResponseParser aiResponseParser,
         PlaceGroupingService placeGroupingService,
         VisitTimeAssigner visitTimeAssigner,
-        ApplicationEventPublisher eventPublisher
+        ApplicationEventPublisher eventPublisher,
+        CurrentScheduleMerger currentScheduleMerger
     ) {
         this.aiService = aiService;
         this.wishlistRepository = wishlistRepository;
@@ -61,6 +62,7 @@ public class PlanChatController {
         this.placeGroupingService = placeGroupingService;
         this.visitTimeAssigner = visitTimeAssigner;
         this.eventPublisher = eventPublisher;
+        this.currentScheduleMerger = currentScheduleMerger;
     }
 
     @PostMapping(value = "/chat", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
@@ -77,11 +79,14 @@ public class PlanChatController {
         Double accommodationLng = request.accommodationLng();
 
         // 1. 사용자 위시리스트 조회 및 맵 변환
+        // id는 매 요청 1부터 다시 매기는 임시 번호 대신, DB의 실제 PK를 그대로 쓴다
+        // ("w" + Wishlist.id) — 그래야 같은 장소가 항상 같은 id를 가져서, 턴이
+        // 바뀌어도 CurrentScheduleMerger가 이름/좌표로 퍼지 매칭할 필요 없이
+        // findById 하나로 바로 찾을 수 있다 (#40 리팩터링).
         List<Wishlist> wishlist = wishlistRepository.findAll();
-        AtomicInteger wIdCounter = new AtomicInteger(1);
         Map<String, Wishlist> wishlistIdMap = wishlist.stream()
             .collect(Collectors.toMap(
-                w -> "w" + wIdCounter.getAndIncrement(), w -> w, (a, b) -> a, java.util.LinkedHashMap::new));
+                w -> "w" + w.getId(), w -> w, (a, b) -> a, java.util.LinkedHashMap::new));
 
         String wishlistStr = wishlistIdMap.entrySet().stream()
             .map(e -> "[" + e.getKey() + "] " + e.getValue().getName() + " (" + e.getValue().getCategory() + ")")
@@ -142,12 +147,14 @@ public class PlanChatController {
             )
         );
 
-        // 5. 추천 장소 리스트 ID 매핑 및 권역별 프롬프트 빌드
-        AtomicInteger pIdCounter = new AtomicInteger(1);
+        // 5. 추천 장소 리스트 ID 매핑 및 권역별 프롬프트 빌드 (마찬가지로 DB 실제 PK 사용)
         Map<String, JejuPlace> placeIdMap = relatedPlaces.stream()
             .collect(Collectors.toMap(
-                p -> "p" + pIdCounter.getAndIncrement(), p -> p, (a, b) -> a, java.util.LinkedHashMap::new));
+                p -> "p" + p.getId(), p -> p, (a, b) -> a, java.util.LinkedHashMap::new));
 
+        String currentScheduleSection = currentScheduleMerger.mergeAndBuildSection(
+            request.currentSchedule(), placeIdMap, wishlistIdMap
+        );
         String placesStr = placeGroupingService.buildPlacesPrompt(placeIdMap);
 
         // 6. 시스템 프롬프트 조립
@@ -166,7 +173,30 @@ public class PlanChatController {
             4. 사용자가 한 메시지에 여러 정보를 한꺼번에 알려주면 추가 질문 없이 바로 일정을 생성하세요.
             5. 부족한 정보만 한 번에 한 가지씩 자연스럽게 질문하세요.
             6. 위 3가지 정보가 모두 파악되면 전체 일정을 생성하세요.
-            7. 이미 일정을 만든 후 유저가 수정을 요청하면 기존 맥락을 유지하면서 일정을 수정하세요.
+            7. 이미 일정을 만든 후 유저가 수정을 요청하면, 아래 [현재 일정] 섹션을 기준으로
+               삼으세요.
+               - 가장 먼저, 사용자가 이번 메시지에서 명시적으로 요청한 변경(예: "카페
+                 추가해줘", "이 장소 빼줘", "다른 곳으로 바꿔줘")을 반드시 실제로
+                 반영하세요. 요청받은 변경을 적용하지 않고 일정을 그대로 돌려주면
+                 안 됩니다.
+               - 언급된 날짜 안에서, 요청한 변경 외의 기존 장소는 [현재 일정]에 표시된
+                 id 그대로 남겨두세요.
+                 - "추가해줘"라면 기존 장소를 지우지 말고 새 장소만 더하세요.
+                 - "빼줘"/"삭제해줘"처럼 순수 삭제를 요청한 경우에만 해당 장소를
+                   지우고, 그 자리를 다른 장소로 채우지 마세요(장소 개수가 줄어듭니다).
+                 - "바꿔줘"/"교체해줘"처럼 교체를 요청한 경우에는, 해당 장소를 지우는
+                   데서 끝내지 말고 반드시 다른 새 장소로 채워 넣어서 장소 개수가
+                   그대로 유지되게 하세요.
+               - "오후부터는 바꿔줘", "3시 이후 일정만 바꿔줘", "저녁 일정만 바꿔줘"처럼
+                 시간대를 기준으로 부분 교체를 요청하면, [현재 일정]에 각 장소 옆에
+                 표시된 시간을 참고해서 해당 시간대에 걸치는 장소만 교체하고, 그 외
+                 시간대의 장소는 id를 그대로 유지하세요("오전"은 대략 12시 이전, "오후"는
+                 12시 이후, "저녁"은 18시 이후로 판단 — 사용자가 "5시 이후"처럼 구체적인
+                 시간을 말하지 않는 한 이 기본값을 쓰세요). 시간이 표시되지 않은 장소는 이
+                 판단에서 제외하고 id를 그대로 유지하세요.
+               - 언급되지 않은 날짜는 [현재 일정]에 표시된 id를 순서와 구성 그대로 다시
+                 사용해서 완전히 동일하게 유지하세요. 절대로 언급되지 않은 날짜까지
+                 새로 만들거나 장소를 바꾸지 마세요.
             8. 첫째 날 출발 시간이나 마지막 날 비행기 시간을 사용자가 언급하면, 그 시간에 맞춰 일정을 조정하세요.
             9. 같은 날에는 반드시 같은 권역의 장소를 우선 사용하세요.
             10. 동부/서부/남부/제주시를 하루에 섞지 마세요.
@@ -186,6 +216,7 @@ public class PlanChatController {
             [사용자 위시리스트 - 반드시 아래 id 중에서만 선택]
             %s
 
+            %s
             반드시 아래 JSON 형식으로만 응답하세요. 다른 텍스트는 절대 출력하지 마세요.
 
             질문 단계일 때 (선택형 질문이면 options 포함):
@@ -221,7 +252,7 @@ public class PlanChatController {
             3. "id"는 반드시 위 목록에 제시된 [p1], [p2]... 또는 [w1], [w2]... 중에서만 선택하세요.
             4. 목록에 없는 장소는 절대 만들어내지 마세요.
             5. 모든 텍스트는 반드시 한국어로만 작성하세요.
-            """, placesStr, wishlistStr);
+            """, placesStr, wishlistStr, currentScheduleSection);
 
         List<ChatMessageDto> messages = new ArrayList<>();
         messages.add(new ChatMessageDto("system", systemPrompt));

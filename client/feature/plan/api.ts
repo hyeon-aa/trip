@@ -36,7 +36,8 @@ export const sendPlanChat = async (
   message: string,
   history: ChatMessage[],
   onMessage: (content: string) => void,
-  accommodation?: Accommodation
+  accommodation?: Accommodation,
+  currentSchedule?: Schedule
 ): Promise<string> => {
   const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/plan/chat`, {
     method: "POST",
@@ -49,6 +50,7 @@ export const sendPlanChat = async (
       history,
       accommodationLat: accommodation?.lat,
       accommodationLng: accommodation?.lng,
+      currentSchedule,
     }),
   });
 

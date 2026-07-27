@@ -259,6 +259,7 @@ export default function PlanChat({ onScheduleUpdate }: Props) {
     Record<number, { selectedOptions: string[]; pickedTime: string }>
   >({});
   const accommodationRef = useRef<Accommodation | undefined>(undefined);
+  const currentScheduleRef = useRef<Schedule | undefined>(undefined);
 
   const isOnboarding = onboardingStep < ONBOARDING_QUESTIONS.length;
 
@@ -325,7 +326,8 @@ export default function PlanChat({ onScheduleUpdate }: Props) {
         (content) => {
           setMessages([...newMessages, { role: "assistant", content }]);
         },
-        accommodationRef.current
+        accommodationRef.current,
+        currentScheduleRef.current
       );
 
       const cleaned = response
@@ -337,6 +339,7 @@ export default function PlanChat({ onScheduleUpdate }: Props) {
 
       if (parsed.type === "schedule" && parsed.schedule) {
         onScheduleUpdate(parsed.schedule);
+        currentScheduleRef.current = parsed.schedule;
       }
 
       setMessages([
