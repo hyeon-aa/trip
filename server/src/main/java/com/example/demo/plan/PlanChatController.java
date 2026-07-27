@@ -19,7 +19,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
-import com.example.demo.ai.AiService;
+import com.example.demo.ai.AiChatService;
 import com.example.demo.jeju.JejuPlace;
 import com.example.demo.jeju.JejuPlaceRepository;
 import com.example.demo.plan.dto.ChatMessageDto;
@@ -40,7 +40,7 @@ public class PlanChatController {
     private static final double AIRPORT_LAT = 33.5070282;
     private static final double AIRPORT_LNG = 126.4913137;
 
-    private final AiService aiService;
+    private final AiChatService aiService;
     private final WishlistRepository wishlistRepository;
     private final JejuPlaceRepository jejuPlaceRepository;
     private final RouteOptimizer routeOptimizer;
@@ -52,7 +52,7 @@ public class PlanChatController {
     private final ExecutorService visitTimeAssignerExecutor;
 
     public PlanChatController(
-        AiService aiService,
+        AiChatService aiService,
         WishlistRepository wishlistRepository,
         JejuPlaceRepository jejuPlaceRepository,
         RouteOptimizer routeOptimizer,

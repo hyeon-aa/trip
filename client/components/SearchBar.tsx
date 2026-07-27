@@ -58,6 +58,7 @@ export default function SearchBar({ onAddToWishlist }: Props) {
           {places.map((place) => (
             <div
               key={place.id}
+              data-testid={`search-result-${place.id}`}
               className="px-4 py-3 border-b border-sky-50 flex justify-between items-center last:border-0"
             >
               <div>

@@ -12,6 +12,29 @@ jobs:
     defaults:
       run:
         working-directory: client
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB: test
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -25,6 +48,38 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm run lint
       - run: pnpm run build
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+      # Playwright E2E(이슈 #48)는 Gemini만 StubAiChatService로 갈아끼우고
+      # 나머지(서버/Postgres/위시리스트 CRUD)는 전부 진짜로 붙는다 — 그래서
+      # server job과 똑같은 postgres/redis 서비스 컨테이너가 필요하고, 서버를
+      # e2e 프로필로 백그라운드 기동한 뒤 준비될 때까지 기다린다.
+      - name: Start server (e2e profile)
+        working-directory: server
+        env:
+          SPRING_PROFILES_ACTIVE: e2e
+          KAKAO_API_KEY: ${{ secrets.KAKAO_API_KEY }}
+        run: |
+          chmod +x gradlew
+          ./gradlew bootRun --no-daemon &
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:8080/wishlist > /dev/null; then
+              echo "server is up"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "server did not become ready in time" >&2
+          exit 1
+      - run: pnpm exec playwright install --with-deps chromium
+      - name: Run Playwright E2E tests
+        env:
+          NEXT_PUBLIC_API_URL: http://localhost:8080
+          NEXT_PUBLIC_KAKAO_MAP_KEY: ${{ secrets.NEXT_PUBLIC_KAKAO_MAP_KEY }}
+        run: pnpm run test:e2e
 
   server:
     runs-on: ubuntu-latest

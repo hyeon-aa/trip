@@ -6,7 +6,7 @@ import java.util.List;
 
 import org.springframework.stereotype.Service;
 
-import com.example.demo.ai.AiService;
+import com.example.demo.ai.AiChatService;
 import com.example.demo.plan.dto.ChatMessageDto;
 
 import tools.jackson.databind.JsonNode;
@@ -16,10 +16,10 @@ import tools.jackson.databind.node.ObjectNode;
 @Service
 public class VisitTimeAssigner {
 
-    private final AiService aiService;
+    private final AiChatService aiService;
     private final AiResponseParser aiResponseParser;
 
-    public VisitTimeAssigner(AiService aiService, AiResponseParser aiResponseParser) {
+    public VisitTimeAssigner(AiChatService aiService, AiResponseParser aiResponseParser) {
         this.aiService = aiService;
         this.aiResponseParser = aiResponseParser;
     }
