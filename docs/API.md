@@ -56,13 +56,20 @@ lat < 33.3          → 남부
 
 | Method | Path | Body | Response |
 |---|---|---|---|
-| POST | `/plan/chat` | `PlanChatRequest { message: string, history: ChatMessageDto[], accommodationLat?: number, accommodationLng?: number }` | `text/event-stream` (SSE), 단일 이벤트로 최종 JSON 전송 |
+| POST | `/plan/chat` | `PlanChatRequest { message: string, history: ChatMessageDto[], accommodationLat?: number, accommodationLng?: number, currentSchedule?: ScheduleDto }` | `text/event-stream` (SSE), 단일 이벤트로 최종 JSON 전송 |
 
 `ChatMessageDto { role: "user"\|"assistant"\|"system", content: string }`
 
 `accommodationLat`/`accommodationLng`는 선택값 — 클라이언트가 채팅 온보딩 마지막
 단계(숙소 검색)에서 골랐을 때만 채워진다. 있으면 `optimalOrder`가 매일 이 좌표를
 동선의 시작/종료 앵커로 쓴다 (마지막 날은 공항이 종료 앵커로 대체됨).
+
+`currentSchedule`은 선택값 — 클라이언트가 마지막으로 받은 일정(직전 응답의
+`schedule` 그대로)을 부분 수정 요청 시 같이 실어 보낸다. 없으면(최초 생성)
+서버는 이전 맥락 없이 새로 만든다. 있으면 `CurrentScheduleMerger`가 그 안의
+장소들을 이번 턴에도 유효한 id로 재등록해서, 언급 안 된 날짜/장소는 그대로
+유지되게 한다 — 자세한 동작은 `docs/PROMPTS.md`, `CLAUDE.md`의 "AI chat →
+itinerary pipeline" 5번 참고.
 
 응답 JSON 형태(`type: "question"` 또는 `type: "schedule"`)와 그 안에 들어가는
 프롬프트 로직은 `docs/PROMPTS.md` 참고.

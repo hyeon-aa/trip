@@ -54,20 +54,38 @@ Requires local PostgreSQL (with pgvector) on port 5434 and Redis on port 6379
 
 ### AI chat → itinerary pipeline
 The core flow lives in `PlanChatController` (`/plan/chat`, SSE endpoint). The request
-body (`PlanChatRequest`) carries `message`, `history`, and an optional
+body (`PlanChatRequest`) carries `message`, `history`, an optional
 `accommodationLat`/`accommodationLng` (the client collects this — see "Client structure"
-below — via a place search, not free text).
-1. Loads the user's wishlist and assigns short ids (`w1`, `w2`, ...).
+below — via a place search, not free text), and an optional `currentSchedule` (the last
+schedule the client actually rendered — see step 5).
+1. Loads the user's wishlist and assigns ids of the form `w{Wishlist.id}` (e.g. `w42`)
+   — the real DB primary key, not a per-request counter. Candidate places (step 4) use
+   the same scheme (`p{JejuPlace.id}`). Using the real PK means the same place always
+   gets the same id across turns, which matters once a schedule can be edited (step 5).
 2. Concatenates chat history + new message, and embeds it via `AiService.createEmbedding`
    (Gemini embedding API).
-3. Does keyword matching over the combined conversation text to guess a target
-   region (동부/서부/남부/제주시) and category (음식점/관광지/문화시설/레포츠), used as
-   optional SQL filters.
+3. Does keyword matching to guess a target region (동부/서부/남부/제주시) and category
+   (음식점/관광지/문화시설/레포츠), used as optional SQL filters. On a normal (first-turn)
+   request this scans the full accumulated conversation text; on an edit turn
+   (`currentSchedule` present) it re-checks the latest `message` alone first and prefers
+   that if it finds a region/category — otherwise old onboarding-style keywords (e.g.
+   "자연") sitting in `history` can drown out what the user just asked for (e.g. "카페")
+   and disable the filter entirely.
 4. `JejuPlaceRepository.findSimilarPlacesWithFilter` runs a native pgvector query
    (`embedding <=> query_embedding`, ORDER BY distance) over `jeju_place`, filtered by
    region/category when detected; falls back to an unfiltered search if the filtered
-   result is empty. Candidate places also get short ids (`p1`, `p2`, ...).
-5. Builds a large Korean system prompt and calls `AiService.chatWithGemini` (a Spring AI
+   result is empty. Candidate places get ids per step 1.
+5. If `currentSchedule` is present (the user is editing an already-generated schedule),
+   `CurrentScheduleMerger` walks its places and makes sure each one has a valid id in
+   this turn's candidate maps: already present → reuse as-is; missing (this turn's
+   vector search didn't surface it) → `findById` it directly by the numeric part of its
+   id and add it. The merged result becomes a `[현재 일정]` section appended to the
+   prompt, each place shown with its `recommendedTime` (e.g. `[p137] 성산일출봉
+   (09:00~10:30)`) so the model can also honor time-scoped edits ("오후부터는 바꿔줘").
+   Prompt rules tell the model to keep everything not mentioned in the current message
+   untouched, and to actually apply what was asked (add/remove/replace/time-scoped
+   replace) rather than silently regenerating unrelated parts.
+6. Builds a large Korean system prompt and calls `AiService.chatWithGemini` (a Spring AI
    `ChatClient` call — transient errors like 503 are retried manually inside
    `chatWithGemini` itself, not by Spring AI's `RetryTemplate`: the `google-genai`
    starter wraps every error into a plain `RuntimeException`, so Spring AI's built-in
@@ -77,10 +95,10 @@ below — via a place search, not free text).
    one small area; wishlist places are listed too. Rules cover output format, minimum
    3 places/day, no reusing a place across days, and honoring arrival/departure time
    mentions.
-6. Parses the model's JSON response (`AiResponseParser.parse` strips markdown fences
+7. Parses the model's JSON response (`AiResponseParser.parse` strips markdown fences
    and extracts the outermost `{...}`). For `type: schedule` responses, resolves each
-   place id back to real name/category/lat/lng from the id maps built in steps 1/4.
-7. Per day, places with coordinates are reordered for shortest travel distance
+   place id back to real name/category/lat/lng from the id maps built in steps 1/4/5.
+8. Per day, places with coordinates are reordered for shortest travel distance
    (`optimalOrder`: brute-force permutations for ≤8 stops, else nearest-neighbor).
    The route is anchored at both ends: every day starts/ends near the accommodation
    (if provided), except the last day, which ends near the airport instead. A second
@@ -89,10 +107,17 @@ below — via a place search, not free text).
    conversation text too, so it can respect an arrival time (day 1) or departure time
    (last day) mentioned in the chat — middle days skip the conversation text to avoid
    resending it on every call.
-8. Result is streamed back over SSE as a single JSON payload.
+9. Result is streamed back over SSE as a single JSON payload.
 
 The AI must only ever choose place ids from the lists given in the prompt — it never
-invents places or coordinates.
+invents places or coordinates. This is why the resolve step (7) exists at all instead of
+having the model return `name`/`lat`/`lng` directly: an LLM can't be trusted to reproduce
+exact decimal coordinates without drift, and free-form place names open the door to
+hallucinating places that don't exist in `jeju_place`/`wishlist`. Splitting the roles —
+the model only *judges/selects* (which id fits this day), the server is the sole source
+of *fact* (what that id's real name/category/lat/lng actually are) — makes both failure
+modes structurally impossible rather than something the prompt has to talk the model out
+of.
 
 ### External integrations (`AiService`, `jeju/`)
 - **Gemini**: chat completion (`gemini-2.5-flash`) goes through Spring AI's
