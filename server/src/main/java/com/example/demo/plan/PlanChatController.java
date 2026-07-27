@@ -102,42 +102,41 @@ public class PlanChatController {
                 + " " + message;
 
         // 3. [핵심 추가] 사용자의 대화 흐름이나 수정 요청에서 특정 조건(지역, 카테고리) 낚아채기
-        String targetRegion = null;
-        if (conversationText.contains("서부")) targetRegion = "서부";
-        else if (conversationText.contains("동부")) targetRegion = "동부";
-        else if (conversationText.contains("남부")) targetRegion = "남부";
-        else if (conversationText.contains("제주시")) targetRegion = "제주시";
+        String targetRegion = detectRegion(conversationText);
+        List<String> targetCategories = detectCategories(conversationText);
 
-        boolean wantsFood = conversationText.contains("맛집") || conversationText.contains("흑돼지") || conversationText.contains("식당") || conversationText.contains("갈치") || conversationText.contains("카페") || conversationText.contains("커피") || conversationText.contains("베이커리");
-        boolean wantsNature = conversationText.contains("관광지") || conversationText.contains("자연") || conversationText.contains("바다") || conversationText.contains("숲");
-        boolean wantsCulture = conversationText.contains("문화시설") || conversationText.contains("박물관") || conversationText.contains("미술관") || conversationText.contains("전시");
-        boolean wantsSports = conversationText.contains("레포츠") || conversationText.contains("액티비티") || conversationText.contains("서핑") || conversationText.contains("스쿠버") || conversationText.contains("승마");
-
-        int mentionedCount = (wantsFood ? 1 : 0) + (wantsNature ? 1 : 0) + (wantsCulture ? 1 : 0) + (wantsSports ? 1 : 0);
-
-        String targetCategory = null;
-        if (mentionedCount == 1) {
-            if (wantsFood) targetCategory = "음식점";
-            else if (wantsNature) targetCategory = "관광지";
-            else if (wantsCulture) targetCategory = "문화시설";
-            else if (wantsSports) targetCategory = "레포츠";
+        // 일정 수정 턴([현재 일정]이 있는 요청)에서는 이번 메시지에 명시된 지역/
+        // 카테고리를 우선한다. conversationText는 history 전체가 누적돼 있어서,
+        // 예를 들어 온보딩 때 말한 "오름/자연경관"이 계속 남아있는 채로 "카페로
+        // 바꿔줘"라고 새로 요청하면 감지된 카테고리가 2개(자연+음식)가 되는데,
+        // 누적된 대화 쪽 카테고리(자연)가 이번에 요청한 카페를 밀어낼 수 있으므로
+        // (#40 실사용 검증 중 확인 — "산 빼고 카페로 바꿔줘"가 반영 안 되고 다른
+        // 오름으로 대체됨), 최신 메시지에서 뭐라도 잡히면 그걸로 완전히 덮어쓴다.
+        if (request.currentSchedule() != null) {
+            List<String> latestCategories = detectCategories(message);
+            if (!latestCategories.isEmpty()) targetCategories = latestCategories;
+            String latestRegion = detectRegion(message);
+            if (latestRegion != null) targetRegion = latestRegion;
         }
-        // 여러 카테고리 동시 언급 시 null 유지 → 필터 없이 임베딩 유사도로 혼합 검색
 
         // 4. 질문 기반 임베딩 생성 및 하이브리드 필터링 검색 수행
         String queryEmbedding = aiService.createEmbedding(conversationText);
 
-        // 새로 개편한 레포지토리의 findSimilarPlacesWithFilter 메서드 호출
+        // 새로 개편한 레포지토리의 findSimilarPlacesWithFilter 메서드 호출.
+        // 카테고리가 여러 개 감지돼도(예: "바다/해변" + "맛집 탐방" 동시 선택)
+        // 필터를 아예 끄지 않고, 감지된 카테고리들의 합집합으로 검색한다 —
+        // 사용자가 명시적으로 고른 조합인데 필터를 안 걸면 오히려 관련 없는
+        // 카테고리(문화시설/레포츠 등)까지 섞여 들어온다.
         List<JejuPlace> relatedPlaces = jejuPlaceRepository.findSimilarPlacesWithFilter(
             queryEmbedding,
-            targetRegion,   // 파싱된 지역 조건 (없으면 null 전달되어 무시됨)
-            targetCategory, // 파싱된 카테고리 조건 (없으면 null 전달되어 무시됨)
-            50              // AI에게 줄 추천 후보 풀 개수 (넉넉하게 50개)
+            targetRegion,                        // 파싱된 지역 조건 (없으면 null 전달되어 무시됨)
+            toPostgresArrayLiteral(targetCategories), // 파싱된 카테고리 목록 (비어있으면 무시됨)
+            50                                    // AI에게 줄 추천 후보 풀 개수 (넉넉하게 50개)
         );
 
         // 만약 조건 필터링 조건이 너무 엄격해서 결과가 없으면, 전체에서 검색하도록 안전장치 작동
         if (relatedPlaces.isEmpty()) {
-            relatedPlaces = jejuPlaceRepository.findSimilarPlacesWithFilter(queryEmbedding, null, null, 50);
+            relatedPlaces = jejuPlaceRepository.findSimilarPlacesWithFilter(queryEmbedding, null, "{}", 50);
         }
 
         // 로그 출력 (디버깅용)
@@ -370,5 +369,41 @@ public class PlanChatController {
         }
         sb.append("user: ").append(message).append("\n");
         return sb.toString();
+    }
+
+    // List<String> → Postgres 배열 리터럴 문자열("{음식점,관광지}", 빈 리스트면 "{}").
+    // 카테고리 값(음식점/관광지/문화시설/레포츠)은 콤마·중괄호·따옴표가 안 섞인
+    // 고정된 값들이라 별도 이스케이프 없이 그대로 이어붙여도 안전하다.
+    private String toPostgresArrayLiteral(List<String> values) {
+        return "{" + String.join(",", values) + "}";
+    }
+
+    private String detectRegion(String text) {
+        if (text.contains("서부")) return "서부";
+        if (text.contains("동부")) return "동부";
+        if (text.contains("남부")) return "남부";
+        if (text.contains("제주시")) return "제주시";
+        return null;
+    }
+
+    // 온보딩 스타일 버튼(PlanChat.tsx ONBOARDING_QUESTIONS[0].options)은 멀티셀렉트라
+    // 여러 카테고리가 동시에 감지될 수 있다(예: "바다/해변" + "맛집 탐방") — 예전엔
+    // 이럴 때 필터 자체를 꺼서 관련 없는 카테고리까지 다 섞였는데, 이제 감지된
+    // 카테고리들의 합집합으로 필터링한다("역사/문화"는 "문화시설"이 아니라
+    // "역사"/"문화"만 있어서 예전 키워드로는 전혀 감지가 안 됐고(#40 실사용 검증
+    // 중 발견), "휴양/힐링"도 이 DB에서 휴양림 등이 실제로 관광지 카테고리로
+    // 들어있어(예: 제주절물자연휴양림) 관광지 쪽으로 잡는 게 맞다).
+    private List<String> detectCategories(String text) {
+        List<String> categories = new ArrayList<>();
+        boolean wantsFood = text.contains("맛집") || text.contains("흑돼지") || text.contains("식당") || text.contains("갈치") || text.contains("카페") || text.contains("커피") || text.contains("베이커리");
+        boolean wantsNature = text.contains("관광지") || text.contains("자연") || text.contains("바다") || text.contains("숲") || text.contains("휴양") || text.contains("힐링");
+        boolean wantsCulture = text.contains("문화시설") || text.contains("역사") || text.contains("문화") || text.contains("박물관") || text.contains("미술관") || text.contains("전시");
+        boolean wantsSports = text.contains("레포츠") || text.contains("액티비티") || text.contains("서핑") || text.contains("스쿠버") || text.contains("승마");
+
+        if (wantsFood) categories.add("음식점");
+        if (wantsNature) categories.add("관광지");
+        if (wantsCulture) categories.add("문화시설");
+        if (wantsSports) categories.add("레포츠");
+        return categories;
     }
 }
