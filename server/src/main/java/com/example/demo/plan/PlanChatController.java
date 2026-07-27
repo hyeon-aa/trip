@@ -6,6 +6,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -48,6 +49,7 @@ public class PlanChatController {
     private final VisitTimeAssigner visitTimeAssigner;
     private final ApplicationEventPublisher eventPublisher;
     private final CurrentScheduleMerger currentScheduleMerger;
+    private final ExecutorService visitTimeAssignerExecutor;
 
     public PlanChatController(
         AiService aiService,
@@ -58,7 +60,8 @@ public class PlanChatController {
         PlaceGroupingService placeGroupingService,
         VisitTimeAssigner visitTimeAssigner,
         ApplicationEventPublisher eventPublisher,
-        CurrentScheduleMerger currentScheduleMerger
+        CurrentScheduleMerger currentScheduleMerger,
+        ExecutorService visitTimeAssignerExecutor
     ) {
         this.aiService = aiService;
         this.wishlistRepository = wishlistRepository;
@@ -68,6 +71,7 @@ public class PlanChatController {
         this.placeGroupingService = placeGroupingService;
         this.visitTimeAssigner = visitTimeAssigner;
         this.eventPublisher = eventPublisher;
+        this.visitTimeAssignerExecutor = visitTimeAssignerExecutor;
         this.currentScheduleMerger = currentScheduleMerger;
     }
 
@@ -377,7 +381,7 @@ public class PlanChatController {
                         timeAssignments.add(CompletableFuture.runAsync(() ->
                             visitTimeAssigner.assignTimesForDay(
                                 ordered, fixedTimes, dayConversationContext, isFirstDay, isLastDay, minStartMinutes
-                            )
+                            ), visitTimeAssignerExecutor
                         ));
                     }
 
