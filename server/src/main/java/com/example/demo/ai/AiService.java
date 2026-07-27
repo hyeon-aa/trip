@@ -23,7 +23,7 @@ import com.example.demo.redis.RedisService;
 import com.google.genai.errors.ApiException;
 
 @Service
-public class AiService {
+public class AiService implements AiChatService {
 
     // Spring AI의 spring-ai-starter-model-google-genai는 Gemini 쪽 에러를 전부
     // 평범한 RuntimeException으로 감싸버려서, Spring AI 자체의 RetryTemplate
@@ -65,6 +65,7 @@ public class AiService {
     @Value("${gemini.api.key}")
     private String geminiApiKey;
 
+    @Override
     public String createEmbedding(String text) {
         String key = cacheKey(text);
         String cached = getCached(key);
@@ -125,6 +126,7 @@ public class AiService {
         }
     }
 
+    @Override
     public String chatWithGemini(List<ChatMessageDto> messages) {
         List<Message> chatMessages = new ArrayList<>();
 

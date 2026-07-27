@@ -105,6 +105,7 @@ export default function WishlistPanel({
         {wishlist.map((item) => (
           <div
             key={item.id}
+            data-testid={`wishlist-item-${item.id}`}
             className={`p-3 bg-sky-50 rounded-xl transition-colors ${
               onClickItem ? "cursor-pointer hover:bg-sky-100" : ""
             }`}

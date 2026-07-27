@@ -122,6 +122,7 @@ export default function KakaoMap() {
                       clickable
                     >
                       <div
+                        data-testid={`schedule-marker-${activeDay.day}-${idx}`}
                         onClick={() =>
                           setSelectedMarker((prev) =>
                             prev?.kind === "schedule" &&
