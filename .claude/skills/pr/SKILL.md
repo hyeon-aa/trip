@@ -49,6 +49,11 @@ git push -u origin <current-branch>
 - 본문: `.github/PULL_REQUEST_TEMPLATE.md` 구조(`## Summary` / `## Test plan`)를
   따른다. Summary는 커밋들을 종합한 핵심 변경 bullet 2~4개, Test plan은 어떻게
   검증했는지/해야 하는지 체크리스트.
+- **bullet 하나를 여러 줄로 임의로 줄바꿈하지 않는다** — GitHub은 마크다운의
+  단일 개행(`\n`)도 그대로 렌더링해서, 손으로 70~80자쯤에서 줄바꿈해 쓰면
+  PR 페이지를 아무리 넓게 봐도 그 줄바꿈이 고정폭으로 남아 브라우저 너비에
+  맞춰 자동으로 다시 흐르지(reflow) 않는다(`/issue`와 동일한 문제, 2026-07-27
+  실사용 중 확인). bullet 하나는 항상 한 줄(개행 없이)로 쓴다.
 
 ## 5. 확인 후 생성
 
