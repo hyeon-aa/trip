@@ -22,6 +22,7 @@ import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.SystemMessage;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.prompt.Prompt;
+import org.springframework.ai.google.genai.GoogleGenAiChatOptions;
 
 import com.example.demo.plan.dto.ChatMessageDto;
 import com.example.demo.redis.RedisService;
@@ -82,6 +83,41 @@ class AiServiceTest {
         doThrow(new RuntimeException("연결 실패")).when(redisService).save(anyString(), anyString());
 
         assertThatCode(() -> aiService.saveCache("아무 키", "아무 값")).doesNotThrowAnyException();
+    }
+
+    @Test
+    void chatWithGemini에_responseSchema를_넘기면_Prompt_옵션에_스키마가_실린다() {
+        ChatClient.ChatClientRequestSpec requestSpec = mock(ChatClient.ChatClientRequestSpec.class);
+        ChatClient.CallResponseSpec callResponseSpec = mock(ChatClient.CallResponseSpec.class);
+        when(chatClient.prompt(any(Prompt.class))).thenReturn(requestSpec);
+        when(requestSpec.call()).thenReturn(callResponseSpec);
+        when(callResponseSpec.content()).thenReturn("{\"type\":\"schedule\"}");
+
+        String schema = "{\"type\":\"object\"}";
+        aiService.chatWithGemini(List.of(new ChatMessageDto("user", "제주도 추천해줘")), schema);
+
+        ArgumentCaptor<Prompt> promptCaptor = ArgumentCaptor.forClass(Prompt.class);
+        verify(chatClient).prompt(promptCaptor.capture());
+        GoogleGenAiChatOptions options = (GoogleGenAiChatOptions) promptCaptor.getValue().getOptions();
+
+        assertThat(options.getResponseSchema()).isEqualTo(schema);
+        assertThat(options.getResponseMimeType()).isEqualTo("application/json");
+    }
+
+    @Test
+    void chatWithGemini는_responseSchema가_없으면_옵션_없이_호출한다() {
+        ChatClient.ChatClientRequestSpec requestSpec = mock(ChatClient.ChatClientRequestSpec.class);
+        ChatClient.CallResponseSpec callResponseSpec = mock(ChatClient.CallResponseSpec.class);
+        when(chatClient.prompt(any(Prompt.class))).thenReturn(requestSpec);
+        when(requestSpec.call()).thenReturn(callResponseSpec);
+        when(callResponseSpec.content()).thenReturn("응답 내용");
+
+        aiService.chatWithGemini(List.of(new ChatMessageDto("user", "안녕")));
+
+        ArgumentCaptor<Prompt> promptCaptor = ArgumentCaptor.forClass(Prompt.class);
+        verify(chatClient).prompt(promptCaptor.capture());
+
+        assertThat(promptCaptor.getValue().getOptions()).isNull();
     }
 
     @Test

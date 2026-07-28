@@ -177,6 +177,21 @@ LLM에게 프롬프트를 보내기 전에 코드가 먼저 후보를 추려서 
 5. 모든 텍스트는 반드시 한국어로만 작성하세요.
 ~~~
 
+**id 강제를 프롬프트 텍스트 + JSON Schema 이중으로(#50)**: 위 3번 규칙("id는
+목록 중에서만 선택")은 프롬프트 텍스트로 부탁하는 것뿐이라 이론적으로는 AI가
+목록 밖 id를 낼 가능성을 코드로 막지 못했다(#40 실사용 검증에서 실제로 벗어난
+적은 없었지만, 강제 수단은 아니었음). `PlanChatController`가
+`PlanChatResponseSchemaBuilder`로 이번 턴의 `placeIdMap`/`wishlistIdMap` 키
+전체를 모아 JSON Schema를 동적으로 만들고(place `id` 필드를 그 목록으로
+`enum` 제약), `AiChatService.chatWithGemini(messages, responseSchema)`를 통해
+Gemini의 `GoogleGenAiChatOptions.outputSchema(...)`(→ `responseMimeType:
+application/json` + `responseSchema`)로 API 레벨에 실어 보낸다. 응답이
+`question`/`schedule` 두 형태를 오가므로 `oneOf`로 나누지 않고, 두 형태의
+필드를 전부 한 스키마에 넣되 최상위 `required`는 공통 필드(`type`/`message`)
+만 둬서 어느 쪽 응답도 유효하게 통과하도록 설계했다. `VisitTimeAssigner`의
+시간 배정 호출(아래 2번)은 place id 목록 제약이 필요 없어 스키마를 적용하지
+않았다.
+
 ## 2. 시간 배정 프롬프트 (`assignTimesForDay()` 메서드)
 
 역할: 한 날의 장소를 동선 순서(`optimalOrder`)로 정렬한 뒤, 각 장소에 현실적인
