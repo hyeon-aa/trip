@@ -275,11 +275,14 @@ public class PlanChatController {
 
         // 프롬프트 텍스트("id는 목록 중에서만 선택하세요")는 부탁일 뿐이라, 이번
         // 턴에 실제로 유효한 id(placeIdMap + wishlistIdMap) 전체를 enum으로 건
-        // JSON Schema를 같이 실어서 API 레벨에서 강제한다(이슈 #50).
+        // JSON Schema를 같이 실어서 API 레벨에서 강제한다(이슈 #50). validIds가
+        // 비어있으면(예: jeju_place가 아직 비어있는 신선한 환경) enum이 빈
+        // "절대 만족 불가" 스키마가 되어버리므로, 이 경우엔 스키마를 아예 안
+        // 실어서 기존처럼 프롬프트 텍스트 제약만 쓰는 쪽으로 안전하게 물러난다.
         Set<String> validIds = new LinkedHashSet<>();
         validIds.addAll(placeIdMap.keySet());
         validIds.addAll(wishlistIdMap.keySet());
-        String responseSchema = responseSchemaBuilder.build(validIds);
+        String responseSchema = validIds.isEmpty() ? null : responseSchemaBuilder.build(validIds);
 
         // 7. 비동기 쓰레드로 AI 요청 및 데이터 후처리 가공 (SSE 스트리밍 전송)
         new Thread(() -> {
