@@ -14,6 +14,7 @@ import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.SystemMessage;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.prompt.Prompt;
+import org.springframework.ai.google.genai.GoogleGenAiChatOptions;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
@@ -128,6 +129,11 @@ public class AiService implements AiChatService {
 
     @Override
     public String chatWithGemini(List<ChatMessageDto> messages) {
+        return chatWithGemini(messages, null);
+    }
+
+    @Override
+    public String chatWithGemini(List<ChatMessageDto> messages, String responseSchema) {
         List<Message> chatMessages = new ArrayList<>();
 
         messages.stream()
@@ -146,7 +152,15 @@ public class AiService implements AiChatService {
             }
         }
 
-        Prompt prompt = new Prompt(chatMessages);
+        // outputSchema는 responseMimeType("application/json")까지 같이
+        // 설정해주는 편의 메서드다. 여기서 세팅하지 않은 필드(model 등)는
+        // ChatClient에 이미 구성된 기본 옵션(application.properties)과
+        // 병합되어 채워진다 — DefaultChatClient.prompt(Prompt)가 런타임
+        // 옵션을 기본 옵션 위에 덮어씌우는 방식으로 합치기 때문에, 여기서
+        // model을 다시 지정할 필요가 없다.
+        Prompt prompt = responseSchema == null
+            ? new Prompt(chatMessages)
+            : new Prompt(chatMessages, GoogleGenAiChatOptions.builder().outputSchema(responseSchema).build());
         int attempts = 0;
         while (true) {
             try {
