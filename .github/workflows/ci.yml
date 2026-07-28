@@ -111,20 +111,12 @@ jobs:
     defaults:
       run:
         working-directory: server
+    # postgres 서비스 컨테이너는 더 이상 없다 — @SpringBootTest 통합 테스트가
+    # Testcontainers로 매번 자기 컨테이너를 직접 띄우기 때문(이슈 #49). ubuntu-latest
+    # 러너는 이미 Docker 데몬이 떠있어서(services: 컨테이너도 그걸로 도는 것) 별도
+    # 설정 없이 Testcontainers가 그대로 동작한다. redis는 아직 정적 접속 정보
+    # (application-test.properties)를 쓰는 경로가 남아있을 수 있어 그대로 둔다.
     services:
-      postgres:
-        image: pgvector/pgvector:pg16
-        env:
-          POSTGRES_DB: test
-          POSTGRES_USER: test
-          POSTGRES_PASSWORD: test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
       redis:
         image: redis:7-alpine
         ports:

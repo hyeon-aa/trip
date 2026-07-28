@@ -6,7 +6,7 @@ import java.util.Map;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 
-import com.example.demo.ai.AiService;
+import com.example.demo.ai.AiChatService;
 
 import tools.jackson.databind.JsonNode;
 
@@ -24,13 +24,13 @@ public class TourApiService {
     private final TourApiClient tourApiClient;
     private final TourDetailService tourDetailService;
     private final JejuPlaceRepository jejuPlaceRepository;
-    private final AiService aiService;
+    private final AiChatService aiService;
 
     public TourApiService(
         TourApiClient tourApiClient,
         TourDetailService tourDetailService,
         JejuPlaceRepository jejuPlaceRepository,
-        AiService aiService
+        AiChatService aiService
     ) {
         this.tourApiClient = tourApiClient;
         this.tourDetailService = tourDetailService;

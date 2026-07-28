@@ -20,6 +20,12 @@ repositories {
 dependencyManagement {
 	imports {
 		mavenBom 'org.springframework.ai:spring-ai-bom:2.0.0'
+		// io.spring.dependency-management 플러그인이 spring-boot-dependencies
+		// 안에 중첩된(nested) BOM import(org.testcontainers:testcontainers-bom)는
+		// 자동으로 안 따라가서, org.testcontainers:junit-jupiter/postgresql
+		// 버전을 못 찾는 문제가 있었다 — 그래서 같은 버전(spring-boot 4.1.0이
+		// 관리하는 testcontainers.version)을 직접 import한다.
+		mavenBom 'org.testcontainers:testcontainers-bom:2.0.5'
 	}
 }
 
@@ -32,6 +38,17 @@ dependencies {
 	annotationProcessor 'org.projectlombok:lombok'
 	testImplementation 'org.springframework.boot:spring-boot-starter-test'
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+	testImplementation 'org.springframework.boot:spring-boot-testcontainers'
+	// Spring Boot 4부터 @AutoConfigureMockMvc가 spring-boot-test-autoconfigure에서
+	// 빠져서 spring-boot-starter-test만으로는 더 이상 안 딸려온다 — 별도 모듈로
+	// 명시적으로 추가해야 한다(패키지도 org.springframework.boot.webmvc.test.autoconfigure로
+	// 바뀜). Boot 3 시절 자료로는 이 부분이 안 나와 있어서 헷갈리기 쉽다.
+	testImplementation 'org.springframework.boot:spring-boot-webmvc-test'
+	// Testcontainers 2.x부터 아티팩트 이름 앞에 "testcontainers-"가 붙는다
+	// (1.x 시절엔 그냥 junit-jupiter/postgresql이었음 — 온라인 자료 상당수가
+	// 아직 옛날 이름 기준이라 헷갈리기 쉽다).
+	testImplementation 'org.testcontainers:testcontainers-junit-jupiter'
+	testImplementation 'org.testcontainers:testcontainers-postgresql'
 	implementation 'org.springframework.boot:spring-boot-starter-data-redis'
 	implementation 'com.pgvector:pgvector:0.1.6'
 	implementation 'org.springframework.boot:spring-boot-starter-flyway'
