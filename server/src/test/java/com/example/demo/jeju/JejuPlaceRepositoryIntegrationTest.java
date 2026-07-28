@@ -79,6 +79,8 @@ class JejuPlaceRepositoryIntegrationTest extends IntegrationTestSupport {
     }
 
     private Long insertPlace(String name, String mainCategory, String region, String embedding) {
+        // insertPlace(category, mainCategory, ...) 둘 다에 같은 값을 넘긴다 — 이
+        // 테스트는 category/main_category 구분이 필요 없어서 의도적으로 같게 쓴 것.
         jejuPlaceRepository.insertPlace(
             name, mainCategory, mainCategory, region, "제주도 어딘가", 33.4, 126.5, "테스트용 설명"
         );
