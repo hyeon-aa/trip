@@ -111,29 +111,14 @@ jobs:
     defaults:
       run:
         working-directory: server
-    services:
-      postgres:
-        image: pgvector/pgvector:pg16
-        env:
-          POSTGRES_DB: test
-          POSTGRES_USER: test
-          POSTGRES_PASSWORD: test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-      redis:
-        image: redis:7-alpine
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
+    # postgres/redis 서비스 컨테이너는 더 이상 없다 — @SpringBootTest 통합 테스트가
+    # Testcontainers로 매번 자기 postgres 컨테이너를 직접 띄우고(이슈 #49),
+    # Redis는 로컬에서 완전히 꺼둔 채로 전체 테스트(44개)를 돌려 실제로 아무 데도
+    # 안 쓰인다는 걸 확인했다(RedisService는 임베딩 캐시용인데 AiChatService가
+    # @MockitoBean으로 대체돼서 캐시 코드 자체가 안 탐 — Lettuce 연결도 기본이
+    # lazy라 컨텍스트 부팅 자체도 Redis 없이 통과한다). ubuntu-latest 러너는 이미
+    # Docker 데몬이 떠있어서(services: 컨테이너도 그걸로 도는 것) 별도 설정 없이
+    # Testcontainers가 그대로 동작한다.
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
