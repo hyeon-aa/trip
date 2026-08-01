@@ -6,6 +6,9 @@ export interface Place {
   recommendedTime: string;
   lat?: number;
   lng?: number;
+  // 바로 이전 장소에서 이 장소까지 실제 이동 시간(분) — 카카오모빌리티 조회
+  // 실패 시 없을 수 있다(이슈 #44).
+  travelMinutesFromPrevious?: number;
 }
 
 export interface Day {

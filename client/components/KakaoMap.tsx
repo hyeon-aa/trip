@@ -205,6 +205,12 @@ export default function KakaoMap() {
                           🕒 {selectedMarker.place.recommendedTime}
                         </p>
                       )}
+                      {selectedMarker.place.travelMinutesFromPrevious != null && (
+                        <p className="text-xs text-stone-500 mt-1 break-keep">
+                          🚗 이전 장소에서 이동 약{" "}
+                          {selectedMarker.place.travelMinutesFromPrevious}분
+                        </p>
+                      )}
                       {selectedMarker.place.reason && (
                         <p className="text-xs text-stone-600 mt-1.5 leading-relaxed break-keep border-t border-stone-100 pt-1.5">
                           {selectedMarker.place.reason}

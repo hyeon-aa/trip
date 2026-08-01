@@ -41,11 +41,11 @@ class CurrentScheduleMergerTest {
     }
 
     private ScheduleDto.PlaceDto placeDto(String id, String name) {
-        return new ScheduleDto.PlaceDto(id, name, "관광지", null, null, null, null);
+        return new ScheduleDto.PlaceDto(id, name, "관광지", null, null, null, null, null);
     }
 
     private ScheduleDto.PlaceDto placeDto(String id, String name, String recommendedTime) {
-        return new ScheduleDto.PlaceDto(id, name, "관광지", null, recommendedTime, null, null);
+        return new ScheduleDto.PlaceDto(id, name, "관광지", null, recommendedTime, null, null, null);
     }
 
     @Test
