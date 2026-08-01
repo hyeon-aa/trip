@@ -28,13 +28,19 @@ public class VisitTimeAssigner {
     // 필요한 장소, 값이 있으면 이전 턴부터 유지되는 장소라 그 시간을 그대로
     // 확정한다(#40). 유지 장소는 이미 정답을 아니까 Gemini에게 다시 물어보지
     // 않는다 — 새로 배정이 필요한 장소만 호출 대상에 포함시킨다.
+    //
+    // travelMinutesBetweenConsecutive는 크기가 orderedPlaces.size() - 1이고,
+    // i번째 값이 "i번째 장소 → i+1번째 장소" 실제 이동 시간(분, 카카오모빌리티
+    // 조회, 이슈 #44)이다. 조회 실패한 구간은 null이라 프롬프트에서 그냥
+    // 생략된다 — 이동시간 정보가 없어도 기존 방식대로 시간 배정은 계속된다.
     public void assignTimesForDay(
         List<ObjectNode> orderedPlaces,
         List<String> fixedTimes,
         String conversationContext,
         boolean isFirstDay,
         boolean isLastDay,
-        Integer minStartMinutes
+        Integer minStartMinutes,
+        List<Integer> travelMinutesBetweenConsecutive
     ) {
         if (orderedPlaces.isEmpty()) return;
 
@@ -63,6 +69,13 @@ public class VisitTimeAssigner {
                 sb.append(" — 새로 시간을 정해주세요.");
             }
             sb.append("\n");
+
+            if (i < travelMinutesBetweenConsecutive.size()) {
+                Integer minutes = travelMinutesBetweenConsecutive.get(i);
+                if (minutes != null) {
+                    sb.append("   ↓ 다음 장소까지 실제 이동 약 ").append(minutes).append("분\n");
+                }
+            }
         }
 
         StringBuilder dayConstraints = new StringBuilder();
@@ -93,6 +106,11 @@ public class VisitTimeAssigner {
             %s
 
             고려사항:
+            - [방문 순서]에 "↓ 다음 장소까지 실제 이동 약 N분"이 표시된 구간은 실제
+              도로 이동 시간입니다 — 앞 장소의 종료 시간과 다음 장소의 시작 시간
+              사이 간격이 그 이동 시간보다 짧아지지 않도록 반드시 그만큼의 여유를
+              두세요. 표시가 없는 구간은 이동시간 정보가 없다는 뜻이니 상식적인
+              여유(예: 15~20분)만 두세요.
             - 등산(한라산 등)처럼 오래 걸리는 활동은 충분한 시간을 배정하세요(예: 07:00~17:00).
             - 식사는 아침(08:00~10:00), 점심(12:00~14:00), 저녁(18:00~20:00) 시간대를 고려하세요.
             - 관광지는 1~2시간, 카페는 1시간 내외로 배정하세요.

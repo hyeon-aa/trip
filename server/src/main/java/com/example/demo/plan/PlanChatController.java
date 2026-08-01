@@ -53,6 +53,7 @@ public class PlanChatController {
     private final CurrentScheduleMerger currentScheduleMerger;
     private final ExecutorService visitTimeAssignerExecutor;
     private final PlanChatResponseSchemaBuilder responseSchemaBuilder;
+    private final TravelTimeService travelTimeService;
 
     public PlanChatController(
         AiChatService aiService,
@@ -65,7 +66,8 @@ public class PlanChatController {
         ApplicationEventPublisher eventPublisher,
         CurrentScheduleMerger currentScheduleMerger,
         ExecutorService visitTimeAssignerExecutor,
-        PlanChatResponseSchemaBuilder responseSchemaBuilder
+        PlanChatResponseSchemaBuilder responseSchemaBuilder,
+        TravelTimeService travelTimeService
     ) {
         this.aiService = aiService;
         this.wishlistRepository = wishlistRepository;
@@ -78,6 +80,7 @@ public class PlanChatController {
         this.visitTimeAssignerExecutor = visitTimeAssignerExecutor;
         this.currentScheduleMerger = currentScheduleMerger;
         this.responseSchemaBuilder = responseSchemaBuilder;
+        this.travelTimeService = travelTimeService;
     }
 
     @PostMapping(value = "/chat", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
@@ -394,11 +397,31 @@ public class PlanChatController {
                         }
 
                         dayWorks.add(new DayWork(places, ordered, withoutCoords));
-                        timeAssignments.add(CompletableFuture.runAsync(() ->
+                        // 이동시간 조회(카카오모빌리티, 이슈 #44)도 시간 배정과 마찬가지로
+                        // 날짜별로 병렬 실행되는 이 블록 안에서 수행한다 — 날짜 간
+                        // 병렬성은 그대로 유지하면서, 같은 날 안의 여러 구간 조회도
+                        // TravelTimeService 안에서 추가로 병렬화된다(중첩 병렬).
+                        timeAssignments.add(CompletableFuture.runAsync(() -> {
+                            List<Integer> travelMinutes =
+                                travelTimeService.lookupConsecutiveTravelMinutes(ordered, visitTimeAssignerExecutor);
+                            // 프론트에서도 장소 카드에 "이전 장소에서 이동 약 N분"을 보여줄 수
+                            // 있게, i+1번째 장소(도착지)에 그 구간의 이동시간을 실어 보낸다.
+                            // 이 값은 routeOptimizer가 정한 순서 기준이라, 아래에서
+                            // recommendedTime 기준으로 최종 재정렬되면 이웃이 바뀌어 값이
+                            // 살짝 안 맞을 수 있다(주로 부분 수정으로 일부 장소 시간이
+                            // 고정된 턴에서만 발생하는 드문 경우) — 그래도 아예 표시 안
+                            // 하는 것보다는 낫다고 판단해 그대로 둔다.
+                            for (int i = 0; i < travelMinutes.size(); i++) {
+                                Integer minutes = travelMinutes.get(i);
+                                if (minutes != null) {
+                                    ordered.get(i + 1).put("travelMinutesFromPrevious", minutes);
+                                }
+                            }
                             visitTimeAssigner.assignTimesForDay(
-                                ordered, fixedTimes, dayConversationContext, isFirstDay, isLastDay, minStartMinutes
-                            ), visitTimeAssignerExecutor
-                        ));
+                                ordered, fixedTimes, dayConversationContext, isFirstDay, isLastDay,
+                                minStartMinutes, travelMinutes
+                            );
+                        }, visitTimeAssignerExecutor));
                     }
 
                     // 날짜별 시간 배정 호출이 전부 끝날 때까지 대기 — 서로 독립적이라
