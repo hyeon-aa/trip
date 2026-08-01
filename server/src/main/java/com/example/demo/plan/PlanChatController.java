@@ -408,20 +408,41 @@ public class PlanChatController {
                         // 날짜별로 병렬 실행되는 이 블록 안에서 수행한다 — 날짜 간
                         // 병렬성은 그대로 유지하면서, 같은 날 안의 여러 구간 조회도
                         // TravelTimeService 안에서 추가로 병렬화된다(중첩 병렬).
+                        // 한 날의 장소가 전부 유지 대상(fixedTimes에 null이 없음)이면 물리적
+                        // 동선이 지난 턴과 동일하므로, VisitTimeAssigner가 이 경우 Gemini 호출
+                        // 자체를 생략하는 것과 마찬가지로 카카오 API도 다시 호출하지 않고
+                        // 이전 턴 값을 재사용한다(이슈 #44 리뷰 — 안 바뀐 날짜인데도 매 턴
+                        // 이동시간을 재조회해서 이 최적화를 무력화시키고 있었음).
+                        boolean dayFullyFixed = fixedTimes.stream().allMatch(java.util.Objects::nonNull);
+                        Map<String, Integer> oldTravelMinutes =
+                            dayFullyFixed ? oldTravelMinutesForDay(request.currentSchedule(), dayNumber) : Map.of();
+
                         timeAssignments.add(CompletableFuture.runAsync(() -> {
-                            List<Integer> travelMinutes =
-                                travelTimeService.lookupConsecutiveTravelMinutes(ordered, visitTimeAssignerExecutor);
+                            List<Integer> travelMinutes;
+                            if (dayFullyFixed) {
+                                travelMinutes = new ArrayList<>();
+                                for (int i = 0; i < ordered.size() - 1; i++) {
+                                    ObjectNode to = ordered.get(i + 1);
+                                    String toId = to.has("id") ? to.get("id").asText() : null;
+                                    travelMinutes.add(toId != null ? oldTravelMinutes.get(toId) : null);
+                                }
+                            } else {
+                                travelMinutes =
+                                    travelTimeService.lookupConsecutiveTravelMinutes(ordered, visitTimeAssignerExecutor);
+                            }
                             // 프론트에서도 장소 카드에 "이전 장소에서 이동 약 N분"을 보여줄 수
-                            // 있게, i+1번째 장소(도착지)에 그 구간의 이동시간을 실어 보낸다.
-                            // 이 값은 routeOptimizer가 정한 순서 기준이라, 아래에서
-                            // recommendedTime 기준으로 최종 재정렬되면 이웃이 바뀌어 값이
-                            // 살짝 안 맞을 수 있다(주로 부분 수정으로 일부 장소 시간이
-                            // 고정된 턴에서만 발생하는 드문 경우) — 그래도 아예 표시 안
-                            // 하는 것보다는 낫다고 판단해 그대로 둔다.
+                            // 있게, i+1번째 장소(도착지)에 그 구간의 이동시간과 그 값을 계산한
+                            // 실제 출발지 id를 같이 실어 보낸다. 아래에서 recommendedTime 기준
+                            // 으로 최종 재정렬되면 이웃이 바뀔 수 있는데, 그 시점에 출발지 id가
+                            // 실제 앞자리 장소와 다르면(=값이 더 이상 안 맞으면) 지운다 — 틀린
+                            // 이동시간을 사실인 것처럼 보여주는 것보다 아예 안 보여주는 게 낫다.
                             for (int i = 0; i < travelMinutes.size(); i++) {
                                 Integer minutes = travelMinutes.get(i);
                                 if (minutes != null) {
-                                    ordered.get(i + 1).put("travelMinutesFromPrevious", minutes);
+                                    ObjectNode to = ordered.get(i + 1);
+                                    to.put("travelMinutesFromPrevious", minutes);
+                                    String fromId = ordered.get(i).has("id") ? ordered.get(i).get("id").asText() : null;
+                                    if (fromId != null) to.put("_travelFromId", fromId);
                                 }
                             }
                             visitTimeAssigner.assignTimesForDay(
@@ -445,6 +466,22 @@ public class PlanChatController {
                     // 정렬한다.
                     for (DayWork work : dayWorks) {
                         work.ordered().sort(Comparator.comparingInt(PlanChatController::startMinutes));
+
+                        // 정렬 후 실제 앞자리 장소가 이동시간을 계산했을 때의 출발지
+                        // (_travelFromId)와 다르면, 더 이상 안 맞는 값이므로 지운다.
+                        for (int i = 0; i < work.ordered().size(); i++) {
+                            ObjectNode place = work.ordered().get(i);
+                            String expectedFromId =
+                                place.has("_travelFromId") ? place.get("_travelFromId").asText() : null;
+                            place.remove("_travelFromId");
+                            if (expectedFromId == null) continue;
+                            String actualFromId = i > 0 && work.ordered().get(i - 1).has("id")
+                                ? work.ordered().get(i - 1).get("id").asText() : null;
+                            if (!expectedFromId.equals(actualFromId)) {
+                                place.remove("travelMinutesFromPrevious");
+                            }
+                        }
+
                         work.ordered().addAll(work.withoutCoords());
                         work.places().removeAll();
                         for (ObjectNode o : work.ordered()) work.places().add(o);
@@ -480,6 +517,31 @@ public class PlanChatController {
             for (ScheduleDto.PlaceDto p : day.places()) {
                 if (p.id() != null && p.recommendedTime() != null) {
                     result.put(p.id(), p.recommendedTime());
+                }
+            }
+            return result;
+        }
+        return Map.of();
+    }
+
+    // oldTimesForDay와 같은 방식으로, 장소 id → 그때의 travelMinutesFromPrevious
+    // 맵을 만든다. 한 날의 장소가 전부 유지 대상(fixedTimes에 null이 없음)이면
+    // 이 날은 물리적 동선이 지난 턴과 동일하므로, 카카오 API를 다시 호출하지 않고
+    // 이 맵의 값을 그대로 재사용한다(이슈 #44 리뷰 — 안 바뀐 날짜인데도 매 턴
+    // 이동시간을 다시 조회해서, VisitTimeAssigner가 이미 하고 있는 "완전히 유지되는
+    // 날짜는 Gemini 호출 생략" 최적화를 무력화시키고 있었음).
+    private Map<String, Integer> oldTravelMinutesForDay(ScheduleDto currentSchedule, int dayNumber) {
+        if (currentSchedule == null || currentSchedule.days() == null) {
+            return Map.of();
+        }
+        for (ScheduleDto.DayDto day : currentSchedule.days()) {
+            if (day.day() != dayNumber || day.places() == null) {
+                continue;
+            }
+            Map<String, Integer> result = new LinkedHashMap<>();
+            for (ScheduleDto.PlaceDto p : day.places()) {
+                if (p.id() != null && p.travelMinutesFromPrevious() != null) {
+                    result.put(p.id(), p.travelMinutesFromPrevious());
                 }
             }
             return result;

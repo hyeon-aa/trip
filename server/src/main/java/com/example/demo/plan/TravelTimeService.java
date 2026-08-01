@@ -73,7 +73,9 @@ public class TravelTimeService {
             if (!summary.has("duration")) return null;
 
             int durationSeconds = summary.get("duration").asInt();
-            return Math.max(1, durationSeconds / 60);
+            // 정수 나눗셈(버림)으로 하면 최대 59초까지 실제보다 짧게 보고된다
+            // (예: 119초가 1분으로 표시) — 반올림해서 실제에 더 가깝게 맞춘다.
+            return Math.max(1, Math.toIntExact(Math.round(durationSeconds / 60.0)));
         } catch (Exception e) {
             System.out.println("[TravelTimeService] 이동시간 조회 실패: " + e.getMessage());
             return null;

@@ -254,6 +254,21 @@ application/json` + `responseSchema`)로 API 레벨에 실어 보낸다. 응답�
 `travelMinutesFromPrevious` 필드로 응답에도 실려서 프론트(`SchedulePanel`,
 지도 마커 팝업)에 "🚗 이동 약 N분"으로 표시된다.
 
+**코드리뷰에서 발견된 두 가지 수정**: (1) 안 바뀐 날짜(부분 수정 턴에서
+`fixedTimes`에 null이 없는 날)도 매 턴 카카오 API를 다시 호출해서, `assignTimesForDay`가
+이미 하고 있는 "완전히 유지되는 날짜는 Gemini 호출 생략" 최적화를 무력화시키고
+있었다 — `ScheduleDto.PlaceDto`에 `travelMinutesFromPrevious`를 추가해서
+`currentSchedule`을 통해 이전 값이 그대로 왕복하게 만들고, 안 바뀐 날짜는 그
+값을 재사용해서 카카오 호출 자체를 생략하도록 고쳤다(`oldTravelMinutesForDay`).
+(2) `travelMinutesFromPrevious`는 `RouteOptimizer`가 정한 동선 순서 기준으로
+계산되는데, 최종 응답은 `recommendedTime` 기준으로 다시 정렬되므로(위
+"동선 최적화" 참고) 부분 수정 턴에서 두 순서가 어긋나면 배지가 실제로는
+이웃이 아닌 장소 사이의 값을 보여줄 수 있었다 — 이동시간을 계산할 때 실제
+출발지 id를 같이 저장해뒀다가, 최종 정렬 후 그 자리의 진짜 앞자리 장소와
+다르면 값을 지우도록 고쳤다(라이브 검증: 부분 수정 턴에서 동선이 크게
+바뀐 날은 값이 정상적으로 숨겨지고, 안 바뀐 날은 이전 턴 값이 정확히
+그대로 재사용되는 것을 확인).
+
 **응답을 이름으로 매칭(#41)**: 예전엔 응답 `times` 배열을 요청한 장소 목록과
 같은 순서라고 가정하고 인덱스로 그대로 매칭했는데, Gemini가 실제로 요청
 순서와 다르게(내부적으로 재배열해서) 응답할 수 있어서 엉뚱한 장소에 시간이
