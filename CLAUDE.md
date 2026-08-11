@@ -14,19 +14,22 @@ See `client/CLAUDE.md` (→ `client/AGENTS.md`) for a client-specific note: this
 Next.js version has breaking API changes vs. training data — check
 `node_modules/next/dist/docs/` before relying on remembered Next.js APIs.
 
-Additional docs: `docs/PROJECT.md` (project description, external integrations,
-local env setup), `docs/CONVENTIONS.md` (commit/branch naming, code layout),
+Additional docs: `docs/PROJECT.md` (DB migration rules via Flyway, local env
+setup), `docs/CONVENTIONS.md` (commit/branch naming — code layout itself lives
+in `.claude/rules/server.md`/`client.md`, loaded automatically per directory),
 `docs/DESIGN.md` (current UI/styling state), `docs/PROMPTS.md` (itinerary-generation
 prompts used by `PlanChatController`, kept in sync with the source), `docs/API.md`
 (REST endpoint reference, auth/CORS state, data model), `docs/PRD.md` (Korean —
 feature-level requirements and the "why" behind them, not just architecture),
 `docs/PLACE_SEARCH.md` (Korean — how the embedding search + region/sub_region
 grouping pipeline works, step by step), `docs/WORKFLOW.md` (Korean — the
-issue → branch → PRD → implement → PR/review → merge flow, backed by the
-`/issue`, `/commit`, and `/pr` skills), `docs/REDIS.md` (Korean — Redis
-concepts plus this project's current/planned Redis usage), `docs/EVENTS.md`
+high-level issue → branch → PRD → implement → PR/review → merge flow and the
+reasoning behind its design choices; the actual step-by-step mechanics live in
+the `/issue` and `/pr` skills, not duplicated here), `docs/REDIS.md` (Korean —
+Redis concepts plus this project's current/planned Redis usage), `docs/EVENTS.md`
 (Korean — Spring application event concepts, the sync/async distinction, and
-this project's current domain events).
+this project's current domain events), `docs/E2E.md` (Korean — Playwright E2E
+setup: real server/DB with only Gemini stubbed, local + CI run instructions).
 
 ## Commands
 
