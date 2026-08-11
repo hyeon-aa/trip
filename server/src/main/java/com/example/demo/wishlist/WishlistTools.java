@@ -39,7 +39,7 @@ public class WishlistTools {
         @ToolParam(description = "위시리스트에 추가할 장소 이름") String placeName,
         @ToolParam(description = "메모 — 사용자가 왜 저장하고 싶어하는지 등", required = false) String memo
     ) {
-        List<JejuPlace> matches = jejuPlaceRepository.findByNameContaining(placeName);
+        List<JejuPlace> matches = jejuPlaceRepository.findBestMatchesByName(placeName);
         if (matches.isEmpty()) {
             return "\"" + placeName + "\"라는 이름의 장소를 찾을 수 없어요. 다른 이름으로 다시 말씀해 주시겠어요?";
         }

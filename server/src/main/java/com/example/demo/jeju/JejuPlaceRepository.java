@@ -98,6 +98,16 @@ public interface JejuPlaceRepository extends JpaRepository<JejuPlace, Long> {
 
     List<JejuPlace> findByNameContaining(String name);
 
+    // 이름으로 장소를 찾는 여러 곳(WishlistTools, PlanEditTools)이 공유하는 로직 —
+    // 부분 일치(findByNameContaining)만 쓰면 "협재"처럼 흔한 조각이 협재해수욕장/
+    // 협재포구/협재해물라면오빠네 등 여러 후보에 다 걸려서, DB가 우연히 반환하는
+    // 순서대로 아무거나 골라버리는 문제가 있었다(코드 리뷰에서 지적됨). 정확히
+    // 일치하는 이름이 있으면 그걸 우선하고, 없을 때만 부분 일치로 넓힌다.
+    default List<JejuPlace> findBestMatchesByName(String name) {
+        List<JejuPlace> exact = findByName(name);
+        return exact.isEmpty() ? findByNameContaining(name) : exact;
+    }
+
     @Query("""
         select j
         from JejuPlace j
