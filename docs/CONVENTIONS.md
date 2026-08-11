@@ -27,17 +27,5 @@ feat: tourapi로 변경(back)
 ```
 예: `feat/place`, `feat/claude-setup`
 
-## 코드 구조
-
-### server (`server/src/main/java/com/example/demo/`)
-도메인별 패키지로 분리하고, 패키지 안에서 `Controller` / `Service` / `Repository` /
-`dto/`로 나눈다 (예: `wishlist/WishlistController.java`, `WishlistService.java`,
-`WishlistRepository.java`, `wishlist/dto/`). 여러 외부 API를 조합하는 도메인은
-`Client` + `Service`로 더 나누기도 한다 (`jeju/TourApiClient.java` +
-`jeju/TourApiService.java`).
-
-### client
-- `feature/<domain>/api.ts` — 도메인별 fetch 래퍼. 서버 base URL은
-  `NEXT_PUBLIC_API_URL` 환경변수에서 읽는다.
-- `types/<domain>/*.ts` — 도메인별 공유 타입, 서버 DTO와 이름을 맞춘다.
-- `components/` — 화면에 조합되는 최상위 기능 컴포넌트.
+코드 구조(패키지/디렉토리 배치 규칙)는 `.claude/rules/server.md`,
+`.claude/rules/client.md`를 참고 — 해당 디렉토리 작업 시 자동으로 적용된다.
