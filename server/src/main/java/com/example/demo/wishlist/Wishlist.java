@@ -16,15 +16,15 @@ import lombok.Setter;
 @Table(name = "wishlist")
 public class Wishlist {
 
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+  @Id
+  @GeneratedValue(strategy = GenerationType.IDENTITY)
+  private Long id;
 
-    private String name;
-    private Double lat;
-    private Double lng;
-    private String category;
-    private String kakaoPlaceId;
-    private String address;
-    private String memo;
+  private String name;
+  private Double lat;
+  private Double lng;
+  private String category;
+  private String kakaoPlaceId;
+  private String address;
+  private String memo;
 }

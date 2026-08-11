@@ -1,11 +1,10 @@
 package com.example.demo;
 
+import com.example.demo.ai.AiChatService;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.testcontainers.postgresql.PostgreSQLContainer;
-
-import com.example.demo.ai.AiChatService;
 
 // 통합 테스트 공통 기반 — 실제 Postgres(dev/CI와 같은 pgvector 이미지)를
 // Testcontainers로 띄우고 @ServiceConnection으로 자동 연결한다(application-test
@@ -35,13 +34,12 @@ import com.example.demo.ai.AiChatService;
 @SpringBootTest
 public abstract class IntegrationTestSupport {
 
-    @ServiceConnection
-    static final PostgreSQLContainer postgres = new PostgreSQLContainer("pgvector/pgvector:pg16");
+  @ServiceConnection
+  static final PostgreSQLContainer postgres = new PostgreSQLContainer("pgvector/pgvector:pg16");
 
-    static {
-        postgres.start();
-    }
+  static {
+    postgres.start();
+  }
 
-    @MockitoBean
-    protected AiChatService aiChatService;
+  @MockitoBean protected AiChatService aiChatService;
 }

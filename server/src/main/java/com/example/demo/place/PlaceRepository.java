@@ -1,5 +1,3 @@
 package com.example.demo.place;
 
-public class PlaceRepository {
-    
-}
+public class PlaceRepository {}

@@ -8,8 +8,6 @@ import org.junit.jupiter.api.Test;
 // (이슈 #49).
 class DemoApplicationTests extends IntegrationTestSupport {
 
-	@Test
-	void contextLoads() {
-	}
-
+  @Test
+  void contextLoads() {}
 }

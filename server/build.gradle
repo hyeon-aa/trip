@@ -2,6 +2,7 @@ plugins {
 	id 'java'
 	id 'org.springframework.boot' version '4.1.0'
 	id 'io.spring.dependency-management' version '1.1.7'
+	id 'com.diffplug.spotless' version '7.0.2'
 }
 
 group = 'com.example'
@@ -58,4 +59,27 @@ dependencies {
 
 tasks.named('test') {
 	useJUnitPlatform()
+}
+
+// 저장 시 자동 포맷(.claude/settings.json의 PostToolUse 훅에서 파일 하나만
+// 대상으로 spotlessApply를 호출한다 — client의 eslint --fix 훅과 같은 패턴).
+spotless {
+	java {
+		target 'src/**/*.java'
+		// TEMP: Spotless 도입 시점에 작업 중이던 파일들 — 전체 재포맷 커밋과
+		// 섞이지 않게 잠깐 제외. 이 파일들이 커밋되면 이 목록은 지운다.
+		targetExclude(
+			'src/main/java/com/example/demo/jeju/JejuPlaceRepository.java',
+			'src/main/java/com/example/demo/jeju/JejuPlaceUtil.java',
+			'src/main/java/com/example/demo/plan/PlanChatController.java',
+			'src/main/java/com/example/demo/plan/RouteOptimizer.java',
+			'src/main/java/com/example/demo/plan/PlanEditTools.java',
+			'src/main/java/com/example/demo/wishlist/WishlistChatController.java',
+			'src/main/java/com/example/demo/wishlist/WishlistTools.java',
+			'src/main/java/com/example/demo/wishlist/dto/WishlistChatRequest.java',
+			'src/main/java/com/example/demo/wishlist/dto/WishlistChatResponse.java',
+			'src/test/java/com/example/demo/plan/PlanEditToolsTest.java'
+		)
+		googleJavaFormat()
+	}
 }

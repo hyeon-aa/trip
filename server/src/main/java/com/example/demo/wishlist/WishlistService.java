@@ -1,75 +1,72 @@
 package com.example.demo.wishlist;
 
-import java.util.List;
-
-import org.springframework.context.ApplicationEventPublisher;
-import org.springframework.stereotype.Service;
-
 import com.example.demo.wishlist.dto.CreateWishlistRequest;
 import com.example.demo.wishlist.dto.UpdateWishlistMemoRequest;
 import com.example.demo.wishlist.dto.WishlistResponse;
+import java.util.List;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.stereotype.Service;
 
 @Service
 public class WishlistService {
 
-    private final WishlistRepository wishlistRepository;
-    private final ApplicationEventPublisher eventPublisher;
+  private final WishlistRepository wishlistRepository;
+  private final ApplicationEventPublisher eventPublisher;
 
-    public WishlistService(WishlistRepository wishlistRepository, ApplicationEventPublisher eventPublisher) {
-        this.wishlistRepository = wishlistRepository;
-        this.eventPublisher = eventPublisher;
-    }
+  public WishlistService(
+      WishlistRepository wishlistRepository, ApplicationEventPublisher eventPublisher) {
+    this.wishlistRepository = wishlistRepository;
+    this.eventPublisher = eventPublisher;
+  }
 
-    public WishlistResponse add(CreateWishlistRequest request) {
+  public WishlistResponse add(CreateWishlistRequest request) {
 
-        Wishlist wishlist = new Wishlist();
+    Wishlist wishlist = new Wishlist();
 
-        wishlist.setName(request.name());
-        wishlist.setCategory(request.category());
-        wishlist.setAddress(request.address());
-        wishlist.setLat(request.lat());
-        wishlist.setLng(request.lng());
-        wishlist.setMemo(request.memo());
+    wishlist.setName(request.name());
+    wishlist.setCategory(request.category());
+    wishlist.setAddress(request.address());
+    wishlist.setLat(request.lat());
+    wishlist.setLng(request.lng());
+    wishlist.setMemo(request.memo());
 
-        Wishlist saved = wishlistRepository.save(wishlist);
+    Wishlist saved = wishlistRepository.save(wishlist);
 
-        eventPublisher.publishEvent(new WishlistAddedEvent(saved.getId(), saved.getName()));
+    eventPublisher.publishEvent(new WishlistAddedEvent(saved.getId(), saved.getName()));
 
-        return toResponse(saved);
-    }
+    return toResponse(saved);
+  }
 
-    public List<WishlistResponse> getAll() {
-        return wishlistRepository.findAll()
-            .stream()
-            .map(this::toResponse)
-            .toList();
-    }
+  public List<WishlistResponse> getAll() {
+    return wishlistRepository.findAll().stream().map(this::toResponse).toList();
+  }
 
-    public void delete(Long id) {
-        wishlistRepository.deleteById(id);
-        eventPublisher.publishEvent(new WishlistRemovedEvent(id));
-    }
+  public void delete(Long id) {
+    wishlistRepository.deleteById(id);
+    eventPublisher.publishEvent(new WishlistRemovedEvent(id));
+  }
 
-    public WishlistResponse updateMemo(Long id, UpdateWishlistMemoRequest request) {
-        Wishlist wishlist = wishlistRepository.findById(id)
+  public WishlistResponse updateMemo(Long id, UpdateWishlistMemoRequest request) {
+    Wishlist wishlist =
+        wishlistRepository
+            .findById(id)
             .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 위시리스트입니다: " + id));
 
-        wishlist.setMemo(request.memo());
+    wishlist.setMemo(request.memo());
 
-        Wishlist saved = wishlistRepository.save(wishlist);
+    Wishlist saved = wishlistRepository.save(wishlist);
 
-        return toResponse(saved);
-    }
+    return toResponse(saved);
+  }
 
-    private WishlistResponse toResponse(Wishlist wishlist) {
-        return new WishlistResponse(
-            wishlist.getId(),
-            wishlist.getName(),
-            wishlist.getCategory(),
-            wishlist.getAddress(),
-            wishlist.getLat(),
-            wishlist.getLng(),
-            wishlist.getMemo()
-        );
-    }
+  private WishlistResponse toResponse(Wishlist wishlist) {
+    return new WishlistResponse(
+        wishlist.getId(),
+        wishlist.getName(),
+        wishlist.getCategory(),
+        wishlist.getAddress(),
+        wishlist.getLat(),
+        wishlist.getLng(),
+        wishlist.getMemo());
+  }
 }
