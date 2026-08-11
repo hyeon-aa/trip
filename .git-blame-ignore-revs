@@ -1,0 +1,6 @@
+# git blame이 이 커밋들은 건너뛰고 그 이전 커밋(실제 마지막 로직 변경)을 보여주게 한다.
+# 사용법: git config blame.ignoreRevsFile .git-blame-ignore-revs
+# (GitHub 웹 blame 뷰는 이 파일을 자동으로 인식한다)
+
+# chore: Spotless 도입 + 전체 재포맷(back) — 순수 포맷 변경, 로직 변경 없음
+a4ebb692d350013cbeaab1c9cad278ce4cf788fd
