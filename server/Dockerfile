@@ -20,5 +20,12 @@ COPY --from=builder /app/build/libs/*.jar app.jar
 RUN chown appuser:appuser app.jar
 USER appuser
 
+# Render 대시보드에서 빠뜨려도 최소한 prod 프로필로는 뜨도록 이미지 자체에
+# 기본값을 심어둔다(코드 리뷰 지적 — 이게 없으면 SPRING_PROFILES_ACTIVE 설정을
+# 깜빡했을 때 application.properties가 아예 없는 이미지에서 알 수 없는
+# DataSource 에러로 죽어서 원인 파악이 어려움). Render 환경변수로 얼마든지
+# 덮어쓸 수 있다.
+ENV SPRING_PROFILES_ACTIVE=prod
+
 # Render가 주입하는 $PORT를 application-prod.properties의 server.port=${PORT:8080}가 읽는다
 ENTRYPOINT ["java", "-jar", "/app/app.jar"]
