@@ -1,5 +1,6 @@
 package com.example.demo.jeju;
 
+import java.util.Comparator;
 import java.util.List;
 
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -102,10 +103,26 @@ public interface JejuPlaceRepository extends JpaRepository<JejuPlace, Long> {
     // 부분 일치(findByNameContaining)만 쓰면 "협재"처럼 흔한 조각이 협재해수욕장/
     // 협재포구/협재해물라면오빠네 등 여러 후보에 다 걸려서, DB가 우연히 반환하는
     // 순서대로 아무거나 골라버리는 문제가 있었다(코드 리뷰에서 지적됨). 정확히
-    // 일치하는 이름이 있으면 그걸 우선하고, 없을 때만 부분 일치로 넓힌다.
+    // 일치하는 이름이 있으면 그걸 우선한다.
+    //
+    // 정확히 일치하는 이름이 없을 때도(예: "성산일출봉"을 검색했는데 DB에는
+    // "성산일출봉 [유네스코 세계자연유산]"으로만 있는 경우) 여전히 애매함이
+    // 남는다 — 실사용 검증 중 이 경우 부분 일치 후보 중 전혀 무관한
+    // "성산흑돼지두루치기 성산일출봉점"이 먼저 골라진 사례를 실제로 확인했다.
+    // 처음엔 "이름이 짧은 것을 우선"하는 휴리스틱을 썼는데, 실제로는 그
+    // 식당 이름(16자)이 랜드마크 이름(19자)보다 짧아서 오히려 틀린 답을
+    // 골랐다 — 길이가 아니라 "검색어가 이름의 앞쪽에서 시작하는지"가 진짜
+    // 신호였다("성산일출봉 [...]"은 검색어로 시작하고, "성산흑돼지...
+    // 성산일출봉점"은 검색어가 뒤쪽에 붙어있을 뿐이다). indexOf가 가장
+    // 작은(=검색어가 가장 앞에서 시작하는) 이름을 우선한다.
     default List<JejuPlace> findBestMatchesByName(String name) {
         List<JejuPlace> exact = findByName(name);
-        return exact.isEmpty() ? findByNameContaining(name) : exact;
+        if (!exact.isEmpty()) {
+            return exact;
+        }
+        return findByNameContaining(name).stream()
+            .sorted(Comparator.comparingInt(p -> p.getName() == null ? Integer.MAX_VALUE : p.getName().indexOf(name)))
+            .toList();
     }
 
     @Query("""
