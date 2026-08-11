@@ -96,6 +96,8 @@ public interface JejuPlaceRepository extends JpaRepository<JejuPlace, Long> {
 
     List<JejuPlace> findByName(String name);
 
+    List<JejuPlace> findByNameContaining(String name);
+
     @Query("""
         select j
         from JejuPlace j
