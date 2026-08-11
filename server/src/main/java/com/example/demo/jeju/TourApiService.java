@@ -1,236 +1,143 @@
 package com.example.demo.jeju;
 
+import com.example.demo.ai.AiChatService;
 import java.util.List;
 import java.util.Map;
-
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
-
-import com.example.demo.ai.AiChatService;
-
 import tools.jackson.databind.JsonNode;
 
 @Service
 public class TourApiService {
 
-    private static final Map<Integer, String> CONTENT_TYPES =
-        Map.of(
-            12, "관광지",
-            14, "문화시설",
-            28, "레포츠",
-            39, "음식점"
-        );
+  private static final Map<Integer, String> CONTENT_TYPES =
+      Map.of(
+          12, "관광지",
+          14, "문화시설",
+          28, "레포츠",
+          39, "음식점");
 
-    private final TourApiClient tourApiClient;
-    private final TourDetailService tourDetailService;
-    private final JejuPlaceRepository jejuPlaceRepository;
-    private final AiChatService aiService;
+  private final TourApiClient tourApiClient;
+  private final TourDetailService tourDetailService;
+  private final JejuPlaceRepository jejuPlaceRepository;
+  private final AiChatService aiService;
 
-    public TourApiService(
-        TourApiClient tourApiClient,
-        TourDetailService tourDetailService,
-        JejuPlaceRepository jejuPlaceRepository,
-        AiChatService aiService
-    ) {
-        this.tourApiClient = tourApiClient;
-        this.tourDetailService = tourDetailService;
-        this.jejuPlaceRepository = jejuPlaceRepository;
-        this.aiService = aiService;
+  public TourApiService(
+      TourApiClient tourApiClient,
+      TourDetailService tourDetailService,
+      JejuPlaceRepository jejuPlaceRepository,
+      AiChatService aiService) {
+    this.tourApiClient = tourApiClient;
+    this.tourDetailService = tourDetailService;
+    this.jejuPlaceRepository = jejuPlaceRepository;
+    this.aiService = aiService;
+  }
+
+  /** TourAPI → DB 저장 */
+  public void initAllJejuPlaces() throws Exception {
+
+    for (Integer contentTypeId : CONTENT_TYPES.keySet()) {
+
+      System.out.println("\n==============================");
+
+      System.out.println(CONTENT_TYPES.get(contentTypeId) + " 수집 시작");
+
+      saveContentType(contentTypeId);
     }
+  }
 
-    /**
-     * TourAPI → DB 저장
-     */
-    public void initAllJejuPlaces() throws Exception {
+  /** 저장된 데이터 Embedding 생성 */
+  public void createEmbeddings() {
 
-        for (Integer contentTypeId : CONTENT_TYPES.keySet()) {
+    List<JejuPlace> places = jejuPlaceRepository.findWithoutEmbedding(PageRequest.of(0, 100));
 
-            System.out.println(
-                "\n=============================="
-            );
+    System.out.println("Embedding 대상 : " + places.size());
 
-            System.out.println(
-                CONTENT_TYPES.get(contentTypeId)
-                    + " 수집 시작"
-            );
+    for (JejuPlace place : places) {
 
-            saveContentType(contentTypeId);
-        }
+      try {
+
+        String embeddingText =
+            String.format(
+                "%s %s %s %s %s",
+                place.getName(),
+                place.getCategory(),
+                place.getAddress(),
+                place.getRegion(),
+                place.getDescription());
+
+        String embedding = aiService.createEmbedding(embeddingText);
+
+        jejuPlaceRepository.updateEmbedding(place.getId(), embedding);
+
+        System.out.println("Embedding 완료 : " + place.getName());
+
+      } catch (Exception e) {
+
+        System.out.println("Embedding 실패! : " + place.getName());
+
+        e.printStackTrace();
+      }
     }
+  }
 
-    /**
-     * 저장된 데이터 Embedding 생성
-     */
-    public void createEmbeddings() {
+  private void saveContentType(int contentTypeId) throws Exception {
 
-        List<JejuPlace> places =
-            jejuPlaceRepository.findWithoutEmbedding(
-                PageRequest.of(0, 100)
-            );
+    for (int page = 1; page <= 200; page++) {
 
-        System.out.println(
-            "Embedding 대상 : "
-                + places.size()
-        );
+      JsonNode items = tourApiClient.getPlaces(contentTypeId, page);
 
-        for (JejuPlace place : places) {
+      if (items == null || items.isMissingNode() || items.isEmpty()) {
+        break;
+      }
 
-            try {
+      for (JsonNode item : items) {
 
-                String embeddingText =
-                    String.format(
-                        "%s %s %s %s %s",
-                        place.getName(),
-                        place.getCategory(),
-                        place.getAddress(),
-                        place.getRegion(),
-                        place.getDescription()
-                    );
-
-                String embedding =
-                    aiService.createEmbedding(
-                        embeddingText
-                    );
-
-                jejuPlaceRepository.updateEmbedding(
-                    place.getId(),
-                    embedding
-                );
-
-                System.out.println(
-                    "Embedding 완료 : "
-                        + place.getName()
-                );
-
-            } catch (Exception e) {
-
-                System.out.println(
-                    "Embedding 실패! : " + place.getName()
-                );
-            
-                e.printStackTrace();
-            }
-        }
+        savePlace(item, contentTypeId);
+      }
     }
+  }
 
-    private void saveContentType(
-        int contentTypeId
-    ) throws Exception {
+  private void savePlace(JsonNode item, int contentTypeId) {
 
-        for (int page = 1; page <= 200; page++) {
+    try {
 
-            JsonNode items =
-                tourApiClient.getPlaces(
-                    contentTypeId,
-                    page
-                );
+      String name = item.path("title").asText().trim();
 
-            if (
-                items == null
-                || items.isMissingNode()
-                || items.isEmpty()
-            ) {
-                break;
-            }
+      if (name.isBlank()) {
+        return;
+      }
 
-            for (JsonNode item : items) {
+      if (jejuPlaceRepository.existsByName(name)) {
+        return;
+      }
 
-                savePlace(
-                    item,
-                    contentTypeId
-                );
-            }
-        }
+      String address = item.path("addr1").asText("");
+
+      double lat = item.path("mapy").asDouble();
+
+      double lng = item.path("mapx").asDouble();
+
+      String contentId = item.path("contentid").asText();
+
+      String overview = tourDetailService.getOverview(contentId);
+
+      String intro = tourDetailService.getDetailIntro(contentId, contentTypeId);
+
+      String description = overview + "\n" + intro;
+
+      String category = CONTENT_TYPES.get(contentTypeId);
+
+      String region = JejuPlaceUtil.getRegion(lat, lng);
+
+      jejuPlaceRepository.insertPlace(
+          name, category, category, region, address, lat, lng, description);
+
+      System.out.println("저장 완료 : " + name);
+
+    } catch (Exception e) {
+
+      System.out.println("저장 실패 : " + e.getMessage());
     }
-
-    private void savePlace(
-        JsonNode item,
-        int contentTypeId
-    ) {
-
-        try {
-
-            String name =
-                item.path("title")
-                    .asText()
-                    .trim();
-
-            if (name.isBlank()) {
-                return;
-            }
-
-            if (
-                jejuPlaceRepository.existsByName(name)
-            ) {
-                return;
-            }
-
-            String address =
-                item.path("addr1")
-                    .asText("");
-
-            double lat =
-                item.path("mapy")
-                    .asDouble();
-
-            double lng =
-                item.path("mapx")
-                    .asDouble();
-
-            String contentId =
-                item.path("contentid")
-                    .asText();
-
-            String overview =
-                tourDetailService.getOverview(
-                    contentId
-                );
-
-            String intro =
-                tourDetailService.getDetailIntro(
-                    contentId,
-                    contentTypeId
-                );
-
-            String description =
-                overview
-                    + "\n"
-                    + intro;
-
-            String category =
-                CONTENT_TYPES.get(
-                    contentTypeId
-                );
-
-            String region =
-                JejuPlaceUtil.getRegion(
-                    lat,
-                    lng
-                );
-
-            jejuPlaceRepository.insertPlace(
-                name,
-                category,
-                category,
-                region,
-                address,
-                lat,
-                lng,
-                description
-            );
-
-            System.out.println(
-                "저장 완료 : "
-                    + name
-            );
-
-        } catch (Exception e) {
-
-            System.out.println(
-                "저장 실패 : "
-                    + e.getMessage()
-            );
-        }
-    }
-
+  }
 }

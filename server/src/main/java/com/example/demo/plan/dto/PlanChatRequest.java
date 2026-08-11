@@ -7,6 +7,4 @@ public record PlanChatRequest(
     List<ChatMessageDto> history,
     Double accommodationLat,
     Double accommodationLng,
-    ScheduleDto currentSchedule
-) {
-}
+    ScheduleDto currentSchedule) {}
