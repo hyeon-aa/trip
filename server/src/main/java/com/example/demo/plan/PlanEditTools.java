@@ -68,9 +68,16 @@ public class PlanEditTools {
         final double lat = centerLat;
         final double lng = centerLng;
 
+        // 카테고리 힌트는 main_category(관광지/음식점/문화시설/레포츠, 굵은 분류)로도
+        // 올 수 있고 category(예: "카페", "한식", 세부 분류)로도 올 수 있다 — 이
+        // 둘은 서로 다른 필드라(예: 카페는 category="카페", mainCategory="음식점"),
+        // mainCategory만 정확히 비교하면 "카페" 같은 힌트가 항상 매칭 실패했다
+        // (코드 리뷰에서 지적됨). 둘 다 받아들이도록 OR로 검사한다.
         List<JejuPlace> candidates = jejuPlaceRepository.findAll().stream()
             .filter(p -> p.getLat() != null && p.getLng() != null)
-            .filter(p -> category == null || category.isBlank() || category.equals(p.getMainCategory()))
+            .filter(p -> category == null || category.isBlank()
+                || category.equals(p.getMainCategory())
+                || (p.getCategory() != null && p.getCategory().contains(category)))
             .sorted(Comparator.comparingDouble(p ->
                 JejuPlaceUtil.haversineMeters(lat, lng, p.getLat(), p.getLng())))
             .limit(MAX_RESULTS)
@@ -89,7 +96,7 @@ public class PlanEditTools {
     }
 
     private JejuPlace findFirst(String name) {
-        List<JejuPlace> matches = jejuPlaceRepository.findByNameContaining(name);
+        List<JejuPlace> matches = jejuPlaceRepository.findBestMatchesByName(name);
         return matches.isEmpty() ? null : matches.get(0);
     }
 }

@@ -183,8 +183,14 @@ public class PlanChatController {
 
         // 위치 지정 편집 요청(이슈 #58)이면 실제 좌표 기준 근접 후보를 추가로
         // 조회해 프롬프트에 덧붙인다 — 위치 지정 표현이 없으면 즉시 빈 문자열을
-        // 반환하므로 일반 요청에는 지연시간 영향이 없다.
-        String positionalHint = resolvePositionalHint(message, placeIdMap);
+        // 반환하므로 일반 요청에는 지연시간 영향이 없다. currentSchedule이 없는
+        // 최초 생성 턴에는 애초에 "위치 지정 삽입"이라는 개념 자체가 성립하지
+        // 않으므로(아직 일정이 없음) 이 로직 전체를 건너뛴다 — 안 그러면 "공항
+        // 근처로 시작하고 싶어요"처럼 위치 지정 편집과 무관한 첫 메시지도 걸려서
+        // 불필요하게 Tool 폴백 경로(~5초)를 태울 수 있다(코드 리뷰에서 지적됨).
+        String positionalHint = request.currentSchedule() == null
+            ? ""
+            : resolvePositionalHint(message, placeIdMap);
         String positionalHintSection = positionalHint.isBlank()
             ? ""
             : """
