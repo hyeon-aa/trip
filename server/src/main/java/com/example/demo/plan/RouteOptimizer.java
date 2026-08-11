@@ -7,6 +7,8 @@ import java.util.List;
 
 import org.springframework.stereotype.Service;
 
+import com.example.demo.jeju.JejuPlaceUtil;
+
 import tools.jackson.databind.node.ObjectNode;
 
 @Service
@@ -29,18 +31,18 @@ public class RouteOptimizer {
         for (List<ObjectNode> perm : permutations) {
             double total = 0;
             for (int i = 0; i < perm.size() - 1; i++) {
-                total += haversine(
+                total += JejuPlaceUtil.haversineMeters(
                     perm.get(i).get("lat").asDouble(), perm.get(i).get("lng").asDouble(),
                     perm.get(i + 1).get("lat").asDouble(), perm.get(i + 1).get("lng").asDouble()
                 );
             }
             if (startLat != null && startLng != null) {
                 ObjectNode first = perm.get(0);
-                total += haversine(startLat, startLng, first.get("lat").asDouble(), first.get("lng").asDouble());
+                total += JejuPlaceUtil.haversineMeters(startLat, startLng, first.get("lat").asDouble(), first.get("lng").asDouble());
             }
             if (endLat != null && endLng != null) {
                 ObjectNode last = perm.get(perm.size() - 1);
-                total += haversine(last.get("lat").asDouble(), last.get("lng").asDouble(), endLat, endLng);
+                total += JejuPlaceUtil.haversineMeters(last.get("lat").asDouble(), last.get("lng").asDouble(), endLat, endLng);
             }
             if (total < bestDistance) {
                 bestDistance = total;
@@ -72,7 +74,7 @@ public class RouteOptimizer {
             current = Collections.min(
                 remaining,
                 Comparator.comparingDouble(p ->
-                    haversine(startLat, startLng, p.get("lat").asDouble(), p.get("lng").asDouble()))
+                    JejuPlaceUtil.haversineMeters(startLat, startLng, p.get("lat").asDouble(), p.get("lng").asDouble()))
             );
             remaining.remove(current);
         } else {
@@ -87,7 +89,7 @@ public class RouteOptimizer {
             double curLng = current.get("lng").asDouble();
 
             for (ObjectNode candidate : remaining) {
-                double dist = haversine(curLat, curLng,
+                double dist = JejuPlaceUtil.haversineMeters(curLat, curLng,
                     candidate.get("lat").asDouble(), candidate.get("lng").asDouble());
                 if (dist < minDist) {
                     minDist = dist;
@@ -99,16 +101,5 @@ public class RouteOptimizer {
             current = nearest;
         }
         return result;
-    }
-
-    private double haversine(double lat1, double lng1, double lat2, double lng2) {
-        double R = 6371000;
-        double dLat = Math.toRadians(lat2 - lat1);
-        double dLng = Math.toRadians(lng2 - lng1);
-        double a = Math.sin(dLat / 2) * Math.sin(dLat / 2)
-            + Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2))
-            * Math.sin(dLng / 2) * Math.sin(dLng / 2);
-        double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-        return R * c;
     }
 }

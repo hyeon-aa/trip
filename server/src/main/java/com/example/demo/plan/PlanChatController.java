@@ -13,6 +13,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
+import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -54,6 +55,8 @@ public class PlanChatController {
     private final ExecutorService visitTimeAssignerExecutor;
     private final PlanChatResponseSchemaBuilder responseSchemaBuilder;
     private final TravelTimeService travelTimeService;
+    private final ChatClient chatClient;
+    private final PlanEditTools planEditTools;
 
     public PlanChatController(
         AiChatService aiService,
@@ -67,7 +70,9 @@ public class PlanChatController {
         CurrentScheduleMerger currentScheduleMerger,
         ExecutorService visitTimeAssignerExecutor,
         PlanChatResponseSchemaBuilder responseSchemaBuilder,
-        TravelTimeService travelTimeService
+        TravelTimeService travelTimeService,
+        ChatClient.Builder chatClientBuilder,
+        PlanEditTools planEditTools
     ) {
         this.aiService = aiService;
         this.wishlistRepository = wishlistRepository;
@@ -81,6 +86,8 @@ public class PlanChatController {
         this.currentScheduleMerger = currentScheduleMerger;
         this.responseSchemaBuilder = responseSchemaBuilder;
         this.travelTimeService = travelTimeService;
+        this.chatClient = chatClientBuilder.build();
+        this.planEditTools = planEditTools;
     }
 
     @PostMapping(value = "/chat", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
@@ -174,6 +181,19 @@ public class PlanChatController {
         );
         String placesStr = placeGroupingService.buildPlacesPrompt(placeIdMap);
 
+        // 위치 지정 편집 요청(이슈 #58)이면 실제 좌표 기준 근접 후보를 추가로
+        // 조회해 프롬프트에 덧붙인다 — 위치 지정 표현이 없으면 즉시 빈 문자열을
+        // 반환하므로 일반 요청에는 지연시간 영향이 없다.
+        String positionalHint = resolvePositionalHint(message, placeIdMap);
+        String positionalHintSection = positionalHint.isBlank()
+            ? ""
+            : """
+                [위치 지정 편집 참고 — 실제 좌표 기준 근접 후보]
+                아래는 이번 요청의 기준 장소에서 실제 좌표 거리로 가장 가까운 후보들입니다.
+                위치를 지정한 추가/교체 요청이라면, 읍/면/동 추측 대신 이 목록을 최우선으로
+                고려해서 id를 고르세요.
+                """ + positionalHint;
+
         // 6. 시스템 프롬프트 조립
         String systemPrompt = String.format("""
             당신은 수천 명의 여행 일정을 설계해 온 전문 여행 플래너입니다.
@@ -241,6 +261,7 @@ public class PlanChatController {
             %s
 
             %s
+            %s
             반드시 아래 JSON 형식으로만 응답하세요. 다른 텍스트는 절대 출력하지 마세요.
 
             질문 단계일 때 (선택형 질문이면 options 포함):
@@ -276,7 +297,7 @@ public class PlanChatController {
             3. "id"는 반드시 위 목록에 제시된 [p1], [p2]... 또는 [w1], [w2]... 중에서만 선택하세요.
             4. 목록에 없는 장소는 절대 만들어내지 마세요.
             5. 모든 텍스트는 반드시 한국어로만 작성하세요.
-            """, placesStr, wishlistStr, currentScheduleSection);
+            """, placesStr, wishlistStr, currentScheduleSection, positionalHintSection);
 
         List<ChatMessageDto> messages = new ArrayList<>();
         messages.add(new ChatMessageDto("system", systemPrompt));
@@ -596,6 +617,67 @@ public class PlanChatController {
     // 고정된 값들이라 별도 이스케이프 없이 그대로 이어붙여도 안전하다.
     private String toPostgresArrayLiteral(List<String> values) {
         return "{" + String.join(",", values) + "}";
+    }
+
+    // 이슈 #58 — "OO랑 XX 사이에"/"OO 근처에" 같은 위치 지정 편집 요청이면, 실제
+    // 좌표 기준으로 근접 후보를 찾아 프롬프트에 덧붙인다(PlanEditTools 참고).
+    // 비용을 아끼려는 2단계 구조: (1) 메시지에 이번 턴 후보/현재 일정에 이미 있는
+    // 장소 이름이 그대로 들어있으면 Gemini 호출 없이 바로 계산(값싼 경로).
+    // (2) 정확한 이름이 안 잡히면("그 바다 근처에" 같은 간접 표현) 그때만 Tool
+    // 호출이 가능한 별도 Gemini 호출로 기준 장소를 추론시킨다(비싼 경로, 실측
+    // ~5초 — 이 요청 유형에서만 발생하고 일반 생성/편집에는 영향 없음).
+    // 위치 지정 표현 자체가 없으면 이 메서드는 아무것도 안 하고 빈 문자열을
+    // 반환해서, 일반 요청의 지연시간에는 전혀 영향을 주지 않는다.
+    private String resolvePositionalHint(String message, Map<String, JejuPlace> placeIdMap) {
+        if (!isPositionalInsertRequest(message)) {
+            return "";
+        }
+
+        List<String> anchorNames = findAnchorNamesInMessage(message, placeIdMap);
+        if (!anchorNames.isEmpty()) {
+            return planEditTools.findNearbyPlaces(
+                anchorNames.get(0),
+                anchorNames.size() > 1 ? anchorNames.get(1) : null,
+                null
+            );
+        }
+
+        try {
+            return chatClient.prompt()
+                .system("사용자 메시지에서 위치 지정 편집 요청의 기준 장소(들)를 파악해 "
+                    + "findNearbyPlaces 도구를 반드시 호출하고, 그 도구가 반환한 텍스트를 "
+                    + "요약하거나 바꾸지 말고 그대로 출력해. 다른 말은 덧붙이지 마.")
+                .user(message)
+                .tools(planEditTools)
+                .call()
+                .content();
+        } catch (Exception e) {
+            // 이 힌트는 프롬프트를 보강하는 부가 정보일 뿐이라, 실패해도 일정
+            // 생성 자체(2차 구조화 호출)는 계속 진행되어야 한다.
+            System.out.println("[PlanChatController] 위치 지정 힌트 조회 실패, 생략: " + e.getMessage());
+            return "";
+        }
+    }
+
+    private static final Pattern POSITIONAL_INSERT_PATTERN =
+        Pattern.compile("사이|근처|주변|옆에|가까운");
+
+    private boolean isPositionalInsertRequest(String text) {
+        return POSITIONAL_INSERT_PATTERN.matcher(text).find();
+    }
+
+    // 이번 턴 후보(placeIdMap, currentScheduleMerger가 [현재 일정] 장소도 이미
+    // 병합해둔 상태)의 이름이 메시지에 그대로 등장하는지 찾는다 — 최대 2개
+    // (기준 장소 두 곳까지).
+    private List<String> findAnchorNamesInMessage(String message, Map<String, JejuPlace> placeIdMap) {
+        List<String> found = new ArrayList<>();
+        for (JejuPlace p : placeIdMap.values()) {
+            if (p.getName() != null && message.contains(p.getName()) && !found.contains(p.getName())) {
+                found.add(p.getName());
+                if (found.size() == 2) break;
+            }
+        }
+        return found;
     }
 
     private String detectRegion(String text) {
