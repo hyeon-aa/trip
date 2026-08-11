@@ -29,7 +29,9 @@ the `/issue` and `/pr` skills, not duplicated here), `docs/REDIS.md` (Korean —
 Redis concepts plus this project's current/planned Redis usage), `docs/EVENTS.md`
 (Korean — Spring application event concepts, the sync/async distinction, and
 this project's current domain events), `docs/E2E.md` (Korean — Playwright E2E
-setup: real server/DB with only Gemini stubbed, local + CI run instructions).
+setup: real server/DB with only Gemini stubbed, local + CI run instructions),
+`docs/MCP.md` (Korean — MCP concepts plus this project's `.mcp.json` Postgres
+server setup, read-only access via Docker).
 
 ## Commands
 
