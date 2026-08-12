@@ -1,0 +1,8 @@
+build/
+.gradle/
+out/
+*.log
+
+# 로컬 전용 비밀값 파일 — git에도 안 올라가지만, 로컬에서 docker build를
+# 돌리는 경우를 대비해 이미지에도 절대 안 들어가게 이중으로 막는다.
+src/main/resources/application.properties
