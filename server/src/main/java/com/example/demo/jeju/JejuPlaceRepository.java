@@ -1,5 +1,6 @@
 package com.example.demo.jeju;
 
+import java.util.Comparator;
 import java.util.List;
 
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -102,10 +103,37 @@ public interface JejuPlaceRepository extends JpaRepository<JejuPlace, Long> {
     // 부분 일치(findByNameContaining)만 쓰면 "협재"처럼 흔한 조각이 협재해수욕장/
     // 협재포구/협재해물라면오빠네 등 여러 후보에 다 걸려서, DB가 우연히 반환하는
     // 순서대로 아무거나 골라버리는 문제가 있었다(코드 리뷰에서 지적됨). 정확히
-    // 일치하는 이름이 있으면 그걸 우선하고, 없을 때만 부분 일치로 넓힌다.
+    // 일치하는 이름이 있으면 그걸 우선한다.
+    //
+    // 정확히 일치하는 이름이 없을 때도(예: "성산일출봉"을 검색했는데 DB에는
+    // "성산일출봉 [유네스코 세계자연유산]"으로만 있는 경우) 여전히 애매함이
+    // 남는다 — 실사용 검증 중 이 경우 부분 일치 후보 중 전혀 무관한
+    // "성산흑돼지두루치기 성산일출봉점"이 먼저 골라진 사례를 실제로 확인했다.
+    // 처음엔 "이름이 짧은 것을 우선"하는 휴리스틱을 썼는데, 실제로는 그
+    // 식당 이름(16자)이 랜드마크 이름(19자)보다 짧아서 오히려 틀린 답을
+    // 골랐다 — 길이가 아니라 "검색어가 이름의 앞쪽에서 시작하는지"가 1차
+    // 신호였다("성산일출봉 [...]"은 검색어로 시작하고, "성산흑돼지...
+    // 성산일출봉점"은 검색어가 뒤쪽에 붙어있을 뿐이다).
+    //
+    // 근데 indexOf만으로는 이 파일 맨 위에 적힌 원래 버그 사례("협재"가
+    // 협재해수욕장/협재포구/협재해물라면오빠네에 다 걸리는 것)를 못 푼다 —
+    // 셋 다 "협재"로 시작해서 indexOf가 전부 0으로 동점이기 때문이다(코드
+    // 리뷰에서 지적됨). 동점일 때는 이름이 짧은 쪽을 2차 기준으로 우선한다
+    // — 검색어 바로 뒤에 수식어가 적게 붙을수록(=이름이 짧을수록) 검색어
+    // 자체를 가리키는 대표 명칭일 가능성이 높다는 판단. 이 2차 기준은 위에서
+    // 버린 "길이만 보는" 1차 휴리스틱과 다르다 — indexOf로 먼저 걸러진
+    // 후보들 사이에서만 쓰이므로, "성산흑돼지..." 같이 검색어가 뒤에 붙은
+    // 이름은 애초에 이 단계까지 오지 않는다.
     default List<JejuPlace> findBestMatchesByName(String name) {
         List<JejuPlace> exact = findByName(name);
-        return exact.isEmpty() ? findByNameContaining(name) : exact;
+        if (!exact.isEmpty()) {
+            return exact;
+        }
+        return findByNameContaining(name).stream()
+            .sorted(Comparator
+                .<JejuPlace>comparingInt(p -> p.getName() == null ? Integer.MAX_VALUE : p.getName().indexOf(name))
+                .thenComparingInt(p -> p.getName() == null ? Integer.MAX_VALUE : p.getName().length()))
+            .toList();
     }
 
     @Query("""
