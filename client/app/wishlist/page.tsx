@@ -1,6 +1,7 @@
 "use client";
 
 import SearchBar from "@/components/SearchBar";
+import WishlistChat from "@/components/WishlistChat";
 import WishlistPanel from "@/components/WishlistPanel";
 import {
   addToWishlist,
@@ -58,6 +59,7 @@ export default function WishlistPage() {
           </Link>
         </div>
         <SearchBar onAddToWishlist={handleAddToWishlist} />
+        <WishlistChat onMessageSent={fetchWishlist} />
         <div className="flex-1 overflow-y-auto">
           <WishlistPanel
             wishlist={wishlist}
