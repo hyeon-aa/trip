@@ -10,7 +10,9 @@ public class CorsConfig implements WebMvcConfigurer {
   public void addCorsMappings(CorsRegistry registry) {
     registry
         .addMapping("/**")
-        .allowedOrigins("http://localhost:3000")
+        // Vercel 배포 도메인(trip-t2kb.vercel.app) 추가 — 로컬 개발은 계속
+        // localhost:3000으로 붙으므로 둘 다 허용한다.
+        .allowedOrigins("http://localhost:3000", "https://trip-t2kb.vercel.app")
         .allowedMethods("GET", "POST", "PUT", "PATCH", "DELETE");
   }
 }
